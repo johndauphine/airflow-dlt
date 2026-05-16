@@ -1,0 +1,40 @@
+# Example: replicate the `app` schema from one Postgres into another.
+# Registers as Airflow dag: dlt_pg_app_replication
+
+pipeline:
+  name: pg_app_replication
+  schedule: null
+  retries: 3
+  retry_delay_seconds: 30
+
+source:
+  type: postgres
+  secret_id: source_pg_app
+  host: source-pg
+  port: 5432
+  database: app
+  schema: public
+  sslmode: prefer
+
+target:
+  type: postgres
+  secret_id: target_postgres_main
+  host: postgres-target
+  port: 5432
+  database: warehouse
+  schema_alias: prod    # → dataset name "prod_app_public"
+
+tables:
+  include:
+    - customers
+    - orders
+  overrides:
+    customers:
+      write_disposition: merge
+      primary_key: id
+      incremental:
+        cursor_path: updated_at
+
+load:
+  write_disposition: replace
+  chunk_size: 50000

@@ -1,9 +1,14 @@
-"""Pydantic models + loader for pipeline YAML configs."""
+"""Pydantic models + loader for pipeline YAML configs.
+
+Sources and targets are discriminated unions on ``type``. Adding a new
+endpoint type means: add a Cfg model here, register it in the union, and add
+a matching Connector in ``connectors.py``.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -30,7 +35,11 @@ class PipelineMeta(_Model):
         return v
 
 
-class SourceConfig(_Model):
+# ---------------------------------------------------------------------------
+# Source configs (discriminated union on `type`)
+# ---------------------------------------------------------------------------
+
+class MssqlSourceCfg(_Model):
     type: Literal["mssql"]
     secret_id: str
     host: str
@@ -41,14 +50,65 @@ class SourceConfig(_Model):
     options: dict[str, str] = Field(default_factory=dict)
 
 
-class TargetConfig(_Model):
+class PostgresSourceCfg(_Model):
+    type: Literal["postgres"]
+    secret_id: str
+    host: str
+    port: int = 5432
+    database: str
+    schema_: str = Field(alias="schema")
+    sslmode: str | None = None
+    options: dict[str, str] = Field(default_factory=dict)
+
+
+class SqliteSourceCfg(_Model):
+    """SQLite source — file-based, no host/port/credentials.
+
+    Path can be relative or absolute, or ``:memory:`` for an in-memory DB
+    (only useful for tests where source and target share the same process).
+    """
+    type: Literal["sqlite"]
+    path: str
+    secret_id: str | None = None   # SQLite has no auth; field exists for shape parity
+
+
+SourceConfig = Annotated[
+    Union[MssqlSourceCfg, PostgresSourceCfg, SqliteSourceCfg],
+    Field(discriminator="type"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Target configs (discriminated union on `type`)
+# ---------------------------------------------------------------------------
+
+class PostgresTargetCfg(_Model):
     type: Literal["postgres"]
     secret_id: str
     host: str
     port: int = 5432
     database: str
     schema_alias: str
+    sslmode: str | None = None
 
+
+class SqliteTargetCfg(_Model):
+    """SQLite target — primarily for CI/tests without a database server."""
+    type: Literal["sqlite"]
+    path: str
+    schema_alias: str
+    secret_id: str | None = None   # field exists for shape parity; SQLite has no auth
+
+
+TargetConfig = Annotated[
+    Union[PostgresTargetCfg, SqliteTargetCfg],
+    Field(discriminator="type"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Per-table + load config (unchanged)
+# ---------------------------------------------------------------------------
 
 class IncrementalSpec(_Model):
     cursor_path: str

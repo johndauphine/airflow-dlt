@@ -36,6 +36,7 @@ airflow-dlt/
 ├── dags/dlt_pipeline.py            # DAG factory — one DAG per YAML
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
+│   ├── connectors.py               # Source/Target connectors + registries
 │   ├── secrets_client.py           # SecretsClient interface (NOT secrets.py — shadows stdlib)
 │   ├── secrets_mock.py             # MockDelineaClient (YAML-backed)
 │   ├── dlt_pipeline.py             # build_pipeline(cfg, secrets) → (pipeline, source)
@@ -78,7 +79,7 @@ target:
   host: postgres-target
   port: 5432
   database: stackoverflow
-  schema_alias: dev                       # → dataset "dev__stackoverflow2010__dbo"
+  schema_alias: dev                       # → dataset "dev_stackoverflow2010_dbo"
 
 tables:
   include: [Users, Posts, Comments]
@@ -96,6 +97,23 @@ load:
 
 Adding another pipeline is just another file under `config/pipelines/`. Its
 DAG ID will be `dlt_<pipeline.name>`.
+
+### Supported endpoint types
+
+| Side    | Type        | Notes                                                                       |
+|---------|-------------|-----------------------------------------------------------------------------|
+| Source  | `mssql`     | via pyodbc + ODBC Driver 18; `driver` + `options`                           |
+| Source  | `postgres`  | via psycopg2; optional `sslmode`                                            |
+| Source  | `sqlite`    | file-based (`path`), no auth — ideal for tests / CI                         |
+| Target  | `postgres`  | via dlt's postgres destination                                              |
+| Target  | `sqlite`    | via dlt's sqlalchemy destination — also for tests / CI without a DB server  |
+
+Source/target configs are Pydantic discriminated unions on `type`. Add a new
+endpoint type by writing one Cfg model in
+[`plugins/airflow_dlt/config.py`](plugins/airflow_dlt/config.py) and one
+connector in [`plugins/airflow_dlt/connectors.py`](plugins/airflow_dlt/connectors.py).
+The rest of the pipeline (DAG factory, secrets, dataset naming) is
+type-agnostic.
 
 ## Credentials
 
@@ -126,7 +144,10 @@ uv run pytest tests/integration -v -m integration
 ```
 
 Integration tests are excluded from default runs via a pytest marker, so layer
-1 and 2 stay fast and Docker-free.
+1 and 2 stay fast and Docker-free. The one exception is the SQLite→SQLite
+smoke test in [`tests/integration/test_sqlite_smoke.py`](tests/integration/test_sqlite_smoke.py)
+— it actually runs a `pipeline.run()` end-to-end against SQLite files, but
+needs no infra, so it's intentionally unmarked and runs in CI by default.
 
 ## What dlt replaces
 
