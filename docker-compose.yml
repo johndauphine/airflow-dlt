@@ -1,0 +1,241 @@
+x-airflow-common:
+  &airflow-common
+  build: .
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-metadata/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+
+    AIRFLOW__CORE__DATABASE_ACCESS_ISOLATION: 'True'
+    AIRFLOW__CORE__INTERNAL_API_URL: http://airflow-webserver:8080/internal_api
+    AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: ${AIRFLOW__CORE__INTERNAL_API_SECRET_KEY:-YXNkZmFzZGZhc2RmYXNkZjEyMzQ1Njc4OTA=}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+    AIRFLOW__WEBSERVER__RUN_INTERNAL_API: 'true'
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-YXNkZmFzZGZhc2RmYXNkZjEyMzQ1Njc4OTA=}
+
+    AIRFLOW__CORE__PARALLELISM: ${AIRFLOW__CORE__PARALLELISM:-32}
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: ${AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG:-16}
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
+    AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: 5
+
+    # dlt writes its working state under here; persisted via the dlt-state volume.
+    DLT_DATA_DIR: /opt/airflow/.dlt
+
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/tests:/opt/airflow/tests
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - dlt-state:/opt/airflow/.dlt
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    postgres-metadata:
+      condition: service_healthy
+  networks:
+    - airflow
+
+services:
+  postgres-metadata:
+    image: postgres:16-alpine
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-metadata-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - airflow
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/internal_api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow-triggerer
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: airflow-dag-processor
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins /opt/airflow/.dlt
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins} /opt/airflow/.dlt
+        /entrypoint airflow db migrate
+        /entrypoint airflow users create \
+          --username $${_AIRFLOW_WWW_USER_USERNAME:-airflow} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password $${_AIRFLOW_WWW_USER_PASSWORD:-airflow} || true
+        exec /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+    # YAML merge does not combine list-typed keys, so the airflow-common
+    # volumes are replaced here. The dlt-state volume is mounted so we can
+    # chown it for UID 50000 before the worker services start.
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}:/sources
+      - dlt-state:/opt/airflow/.dlt
+
+  mssql-server:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-server
+    user: "0:0"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD:-YourStrong@Passw0rd}
+      - MSSQL_PID=Developer
+      - TZ=UTC
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    networks:
+      - airflow
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1' -C || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # One-shot: create StackOverflow2010 + empty example tables in the source
+  # MSSQL so the example pipeline has a target to reflect against. Replace
+  # mssql-init/seed.sql (or restore a real .bak) for actual data.
+  mssql-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-init
+    user: "0:0"
+    depends_on:
+      mssql-server:
+        condition: service_healthy
+    environment:
+      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD:-YourStrong@Passw0rd}
+    volumes:
+      - ./mssql-init:/seed:ro
+    networks:
+      - airflow
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/mssql-tools18/bin/sqlcmd
+        -S mssql-server -U sa -P "$${MSSQL_SA_PASSWORD}"
+        -i /seed/seed.sql -C
+    restart: "no"
+
+  postgres-target:
+    image: postgres:16-alpine
+    container_name: postgres-target
+    environment:
+      - POSTGRES_USER=${PG_USER:-postgres}
+      - POSTGRES_PASSWORD=${PG_PASSWORD:-PostgresPassword123}
+      - POSTGRES_DB=${PG_DATABASE:-stackoverflow}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - airflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mssql_data:
+    driver: local
+  postgres_data:
+    driver: local
+  postgres-metadata-data:
+    driver: local
+  dlt-state:
+    driver: local
+
+networks:
+  airflow:
+    driver: bridge
