@@ -1,9 +1,14 @@
-"""Pydantic models + loader for pipeline YAML configs."""
+"""Pydantic models + loader for pipeline YAML configs.
+
+Sources and targets are discriminated unions on ``type``. Adding a new
+endpoint type means: add a Cfg model here, register it in the union, and add
+a matching Connector in ``connectors.py``.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -30,7 +35,11 @@ class PipelineMeta(_Model):
         return v
 
 
-class SourceConfig(_Model):
+# ---------------------------------------------------------------------------
+# Source configs (discriminated union on `type`)
+# ---------------------------------------------------------------------------
+
+class MssqlSourceCfg(_Model):
     type: Literal["mssql"]
     secret_id: str
     host: str
@@ -41,14 +50,48 @@ class SourceConfig(_Model):
     options: dict[str, str] = Field(default_factory=dict)
 
 
-class TargetConfig(_Model):
+class PostgresSourceCfg(_Model):
+    type: Literal["postgres"]
+    secret_id: str
+    host: str
+    port: int = 5432
+    database: str
+    schema_: str = Field(alias="schema")
+    sslmode: str | None = None
+    options: dict[str, str] = Field(default_factory=dict)
+
+
+SourceConfig = Annotated[
+    Union[MssqlSourceCfg, PostgresSourceCfg],
+    Field(discriminator="type"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Target configs (discriminated union on `type`)
+# ---------------------------------------------------------------------------
+
+class PostgresTargetCfg(_Model):
     type: Literal["postgres"]
     secret_id: str
     host: str
     port: int = 5432
     database: str
     schema_alias: str
+    sslmode: str | None = None
 
+
+# Union-of-one keeps the discriminator pattern intact; adding Snowflake later
+# only requires a new model + adding it to this Union.
+TargetConfig = Annotated[
+    Union[PostgresTargetCfg],
+    Field(discriminator="type"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Per-table + load config (unchanged)
+# ---------------------------------------------------------------------------
 
 class IncrementalSpec(_Model):
     cursor_path: str

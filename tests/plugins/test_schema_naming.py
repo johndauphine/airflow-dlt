@@ -22,3 +22,15 @@ def test_empty_part_rejected():
         derive_dataset_name("", "db", "schema")
     with pytest.raises(ValueError):
         derive_dataset_name("alias", "---", "schema")
+
+
+def test_no_schema_drops_segment():
+    """Sources without a schema concept (MySQL, SQLite) → 2-segment name."""
+    assert derive_dataset_name("dev", "shop", None) == "dev__shop"
+
+
+def test_no_schema_still_validates_other_parts():
+    with pytest.raises(ValueError):
+        derive_dataset_name("", "db", None)
+    with pytest.raises(ValueError):
+        derive_dataset_name("alias", "---", None)

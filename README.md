@@ -36,6 +36,7 @@ airflow-dlt/
 ├── dags/dlt_pipeline.py            # DAG factory — one DAG per YAML
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
+│   ├── connectors.py               # Source/Target connectors + registries
 │   ├── secrets_client.py           # SecretsClient interface (NOT secrets.py — shadows stdlib)
 │   ├── secrets_mock.py             # MockDelineaClient (YAML-backed)
 │   ├── dlt_pipeline.py             # build_pipeline(cfg, secrets) → (pipeline, source)
@@ -96,6 +97,21 @@ load:
 
 Adding another pipeline is just another file under `config/pipelines/`. Its
 DAG ID will be `dlt_<pipeline.name>`.
+
+### Supported endpoint types
+
+| Side    | Type        | Notes                                              |
+|---------|-------------|----------------------------------------------------|
+| Source  | `mssql`     | via pyodbc + ODBC Driver 18; `driver` + `options`  |
+| Source  | `postgres`  | via psycopg2; optional `sslmode`                   |
+| Target  | `postgres`  | via dlt's postgres destination                     |
+
+Source/target configs are Pydantic discriminated unions on `type`. Add a new
+endpoint type by writing one Cfg model in
+[`plugins/airflow_dlt/config.py`](plugins/airflow_dlt/config.py) and one
+connector in [`plugins/airflow_dlt/connectors.py`](plugins/airflow_dlt/connectors.py).
+The rest of the pipeline (DAG factory, secrets, dataset naming) is
+type-agnostic.
 
 ## Credentials
 

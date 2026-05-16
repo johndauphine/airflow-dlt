@@ -47,7 +47,19 @@ def mssql_container() -> Iterator[SqlServerContainer]:
 
 @pytest.fixture(scope="session")
 def postgres_container() -> Iterator[PostgresContainer]:
+    """Target Postgres. Re-used across tests."""
     container = PostgresContainer(PG_IMAGE, username="pguser", password="pgpass", dbname="warehouse")
+    container.start()
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_source_container() -> Iterator[PostgresContainer]:
+    """Distinct Postgres instance used as a source for pg→pg tests."""
+    container = PostgresContainer(PG_IMAGE, username="srcuser", password="srcpass", dbname="app")
     container.start()
     try:
         yield container
@@ -128,3 +140,31 @@ def postgres_endpoint(postgres_container) -> dict[str, object]:
         "password": "pgpass",
         "database": "warehouse",
     }
+
+
+@pytest.fixture
+def postgres_source_endpoint(postgres_source_container) -> dict[str, object]:
+    return {
+        "host": postgres_source_container.get_container_host_ip(),
+        "port": int(postgres_source_container.get_exposed_port(5432)),
+        "username": "srcuser",
+        "password": "srcpass",
+        "database": "app",
+    }
+
+
+@pytest.fixture
+def postgres_source_admin_conn(postgres_source_container):
+    """Admin connection to seed the source Postgres for pg→pg tests."""
+    conn = psycopg2.connect(
+        host=postgres_source_container.get_container_host_ip(),
+        port=postgres_source_container.get_exposed_port(5432),
+        user="srcuser",
+        password="srcpass",
+        dbname="app",
+    )
+    conn.autocommit = True
+    try:
+        yield conn
+    finally:
+        conn.close()

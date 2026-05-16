@@ -13,25 +13,33 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
   (named `dlt_broken__<filename>`) whose only task fails loudly with the
   parse error — silent missing DAGs are operationally invisible.
 - **Pipeline config** is a Pydantic model in `plugins/airflow_dlt/config.py`.
-  Extra keys are rejected (`extra="forbid"`); edits to the schema should add
-  fields explicitly.
+  Extra keys are rejected (`extra="forbid"`). `source` and `target` are
+  **discriminated unions on `type`**, so each endpoint type has its own
+  schema (MSSQL needs `driver`+`options`, Postgres needs `sslmode`, etc.).
+- **Connectors** in `plugins/airflow_dlt/connectors.py` own the per-type
+  glue: `sqlalchemy_url(creds)` for sources, `build_destination(creds)` for
+  targets. Adding a new endpoint type = new Cfg model in `config.py` + new
+  connector class + register it in `SOURCE_CONNECTORS` / `TARGET_CONNECTORS`.
+  Everything else (DAG factory, dataset naming, secrets) is type-agnostic.
 - **Credentials** never appear in YAML. The YAML references a `secret_id`;
   `SecretsClient` (interface) + `MockDelineaClient` (YAML-backed impl)
   resolve them at runtime. To plug in real Delinea, implement
   `SecretsClient.get` and swap the client in the DAG.
-- **Dataset naming**: dlt's `dataset_name` doubles as the Postgres schema. We
-  derive `{alias}__{source_db}__{source_schema}` to match the template's
-  hostname-alias pattern. Don't rename `pipeline.name` casually — dlt state
-  is keyed on it, and so is the DAG ID.
+- **Dataset naming**: dlt's `dataset_name` doubles as the Postgres schema.
+  We derive `{alias}__{db}__{schema}` when the source has a schema, and
+  `{alias}__{db}` when it doesn't (e.g. MySQL, SQLite). No hardcoded
+  fallback names. Don't rename `pipeline.name` casually — dlt state is
+  keyed on it, and so is the DAG ID.
 
 ## When editing
 
 - Don't add ENV-based config fallbacks; the move away from `.env` is deliberate.
 - Per-table `overrides` go through `_apply_table_overrides` — if you add a new
   override field in `TableOverride`, update that function too.
-- `_build_mssql_url` / `_build_postgres_credentials` are pure helpers and
-  unit-tested. Keep them pure. Use `urllib.parse.quote(safe="")` for URL
-  userinfo — never `quote_plus` (SQLAlchemy URL parsing reads `+` as literal).
+- URL/credential construction lives in `connectors.py` (unit-tested in
+  `tests/plugins/test_connectors.py`). Use `urllib.parse.quote(safe="")`
+  for URL userinfo — never `quote_plus` (SQLAlchemy URL parsing reads
+  `+` as a literal, silently corrupting creds containing spaces).
 - If you add a new YAML field to `PipelineMeta` that should affect Airflow,
   wire it through `_make_dag` in `dags/dlt_pipeline.py` — otherwise it's inert.
 
