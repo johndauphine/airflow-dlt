@@ -6,16 +6,18 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
 
 ## Architecture
 
-- **DAG factory**, `dags/dlt_pipeline.py`. At parse time it walks
-  `config/pipelines/*.yaml` and registers one DAG per file. The DAG's
-  `dag_id`, `schedule`, `retries`, `retry_delay`, and `max_active_runs` all
-  come from the YAML. A YAML that fails to parse registers a *broken* DAG
-  (named `dlt_broken__<filename>`) whose only task fails loudly with the
-  parse error — silent missing DAGs are operationally invisible.
+- **Single parameterized DAG**, `dags/dlt_pipeline.py`. Always `dag_id=dlt_pipeline`.
+  Trigger with `{"config_name": "<yaml stem>"}` to pick which YAML to run.
+  Scheduling, retries, max_active_runs are properties of the DAG itself —
+  not per-YAML. (We tried the DAG-factory pattern earlier in development;
+  it created confusing per-YAML DAGs whose operational knobs lived in a
+  different place from where you'd normally configure Airflow.)
 - **Pipeline config** is a Pydantic model in `plugins/airflow_dlt/config.py`.
   Extra keys are rejected (`extra="forbid"`). `source` and `target` are
   **discriminated unions on `type`**, so each endpoint type has its own
   schema (MSSQL needs `driver`+`options`, Postgres needs `sslmode`, etc.).
+  `PipelineMeta` only carries `name` — scheduling fields are deliberately
+  not part of the YAML schema.
 - **Connectors** in `plugins/airflow_dlt/connectors.py` own the per-type
   glue: `sqlalchemy_url(creds)` for sources, `build_destination(creds)` for
   targets. Adding a new endpoint type = new Cfg model in `config.py` + new
@@ -44,8 +46,9 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
   `tests/plugins/test_connectors.py`). Use `urllib.parse.quote(safe="")`
   for URL userinfo — never `quote_plus` (SQLAlchemy URL parsing reads
   `+` as a literal, silently corrupting creds containing spaces).
-- If you add a new YAML field to `PipelineMeta` that should affect Airflow,
-  wire it through `_make_dag` in `dags/dlt_pipeline.py` — otherwise it's inert.
+- Don't add scheduling/retry fields to `PipelineMeta` — they're inert under
+  the single-DAG model and we've removed them once already. Schedule and
+  retries are properties of the DAG, not properties of the pipeline.
 
 ## Running tests
 

@@ -1,12 +1,8 @@
 # Example pipeline: replicate StackOverflow2010 tables from MSSQL to Postgres.
-# Registers as Airflow dag: dlt_stackoverflow_mssql_to_postgres
-# (dag_id is derived as "dlt_<pipeline.name>")
+# Trigger the `dlt_pipeline` DAG with:  {"config_name": "stackoverflow"}
 
 pipeline:
   name: stackoverflow_mssql_to_postgres
-  schedule: null               # manual trigger; cron string ok here too
-  retries: 3
-  retry_delay_seconds: 30
 
 source:
   type: mssql

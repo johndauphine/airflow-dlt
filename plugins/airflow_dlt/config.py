@@ -19,11 +19,13 @@ class _Model(BaseModel):
 
 
 class PipelineMeta(_Model):
+    """Pipeline identity. Scheduling/retry/concurrency knobs deliberately live
+    on the Airflow DAG itself, not in YAML — one DAG (`dlt_pipeline`) runs
+    every config, so there's exactly one place for those operational knobs.
+    The YAML's only job here is to name the pipeline (becomes dlt's
+    ``pipeline_name`` state key and shows up in logs).
+    """
     name: str
-    schedule: str | None = None
-    max_active_runs: int = 1
-    retries: int = 3
-    retry_delay_seconds: int = 30
 
     @field_validator("name")
     @classmethod

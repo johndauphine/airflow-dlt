@@ -16,9 +16,6 @@ from airflow_dlt.config import (
 MSSQL_TO_POSTGRES_YAML = """
 pipeline:
   name: stackoverflow_mssql_to_postgres
-  schedule: null
-  retries: 3
-  retry_delay_seconds: 30
 
 source:
   type: mssql
@@ -88,6 +85,18 @@ def test_load_mssql_to_postgres_config(tmp_path):
     assert cfg.source.schema_ == "dbo"
     assert cfg.target.schema_alias == "dev"
     assert cfg.tables.overrides["Users"].incremental.cursor_path == "ModifiedDate"
+
+
+def test_scheduling_fields_rejected(tmp_path):
+    """schedule/retries/etc. used to be in PipelineMeta but were inert under
+    the single-DAG model. Now strictly rejected — those knobs belong on the
+    DAG, not the YAML."""
+    bad = MSSQL_TO_POSTGRES_YAML.replace(
+        "  name: stackoverflow_mssql_to_postgres\n",
+        "  name: stackoverflow_mssql_to_postgres\n  schedule: '@daily'\n",
+    )
+    with pytest.raises(ValidationError):
+        load_config(_write(tmp_path, bad))
 
 
 def test_load_postgres_to_postgres_config(tmp_path):
@@ -220,7 +229,6 @@ tables:
   include: [T1]
 """
     cfg = load_config(_write(tmp_path, minimal))
-    assert cfg.pipeline.retries == 3
     assert cfg.source.port == 1433
     assert cfg.target.port == 5432
     assert cfg.load.write_disposition == "replace"

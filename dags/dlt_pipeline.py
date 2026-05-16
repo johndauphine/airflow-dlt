@@ -1,13 +1,14 @@
-"""DAG factory: one Airflow DAG per pipeline YAML under config/pipelines/.
+"""Single parameterized DAG that runs any pipeline defined under
+``config/pipelines/*.yaml``.
 
-At parse time we walk ``CONFIG_DIR`` and register one DAG per ``*.yaml``
-file. The DAG's ``dag_id``, ``schedule``, ``retries``, ``retry_delay``, and
-``max_active_runs`` all come from the YAML — editing those YAML fields
-changes Airflow behavior on the next DAG reparse.
+Trigger the DAG with a config name in the DAG run params, e.g.::
 
-YAML files that fail to parse register a *broken* DAG whose only task fails
-loudly with the parse error. This is preferred over swallowing the error
-(silent missing DAGs are operationally invisible).
+    {"config_name": "stackoverflow"}
+
+The DAG resolves ``{CONFIG_DIR}/<config_name>.yaml`` and runs the dlt
+pipeline it describes. Scheduling, retries, and concurrency are properties
+of *this DAG*, not of individual YAMLs — one knob per concern, one place to
+change it.
 """
 
 from __future__ import annotations
@@ -16,16 +17,10 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 from airflow.decorators import dag, task
 
-# NOTE: build_pipeline imports dlt → pyarrow → numpy, which under DagBag's
-# parse subprocess can trip a pyarrow/numpy Cython init-order ImportError
-# ("cannot import name randbits"). The same import works fine at task
-# runtime. Lazy-import build_pipeline inside the @task body so DAG parsing
-# stays lightweight and immune to that issue.
-from airflow_dlt.config import PipelineConfig, load_config
+from airflow_dlt.config import load_config
 from airflow_dlt.secrets_mock import MockDelineaClient
 
 log = logging.getLogger(__name__)
@@ -34,139 +29,83 @@ CONFIG_DIR = Path(os.environ.get("PIPELINE_CONFIG_DIR", "/opt/airflow/config/pip
 SECRETS_FILE = Path(os.environ.get("PIPELINE_SECRETS_FILE", "/opt/airflow/config/secrets.yaml"))
 
 
-def _make_dag(yaml_path: Path, cfg: PipelineConfig):
-    @dag(
-        dag_id=f"dlt_{cfg.pipeline.name}",
-        description=f"dlt MSSQL→Postgres pipeline defined by {yaml_path.name}",
-        start_date=datetime(2026, 1, 1),
-        schedule=cfg.pipeline.schedule,
-        catchup=False,
-        max_active_runs=cfg.pipeline.max_active_runs,
-        default_args={
-            "owner": "data-team",
-            "retries": cfg.pipeline.retries,
-            "retry_delay": timedelta(seconds=cfg.pipeline.retry_delay_seconds),
-        },
-        tags=["dlt", cfg.source.type, cfg.target.type],
-        # We bag DAGs explicitly via globals() in _register_all. Without
-        # auto_register=False, the @dag decorator adds every constructed
-        # DAG to DagContext.autoregistered_dags — including ones that
-        # fail post-construction validation. DagBag merges that set with
-        # module globals, so invalid DAGs would leak back into import
-        # errors even after we exclude them from `registered`.
-        auto_register=False,
-    )
-    def _pipeline_dag():
-        @task
-        def run() -> dict:
-            # Lazy import: dlt pulls pyarrow at module load. Keeping it out of
-            # the DAG file's top-level import block keeps parse fast and
-            # avoids a numpy/pyarrow Cython init-order bug under DagBag.
-            from airflow_dlt.dlt_pipeline import build_pipeline
-
-            # Re-read config at task runtime so YAML edits take effect on the
-            # next DAG run without requiring a scheduler reparse.
-            runtime_cfg = load_config(yaml_path)
-            secrets = MockDelineaClient(SECRETS_FILE)
-            pipeline, source = build_pipeline(runtime_cfg, secrets)
-
-            log.info(
-                "Running dlt pipeline %s → dataset %s (%d tables)",
-                pipeline.pipeline_name,
-                pipeline.dataset_name,
-                len(runtime_cfg.tables.include),
-            )
-            load_info = pipeline.run(source)
-            log.info("Load complete: %s", load_info)
-            return {
-                "pipeline": pipeline.pipeline_name,
-                "dataset": pipeline.dataset_name,
-                "loads_ids": list(load_info.loads_ids),
-            }
-
-        run()
-
-    return _pipeline_dag()
+def _resolve_config_path(config_name: str) -> Path:
+    """Map a config_name DAG param to a YAML file path, with traversal guard."""
+    if not config_name or "/" in config_name or ".." in config_name:
+        raise ValueError(f"invalid config_name: {config_name!r}")
+    path = CONFIG_DIR / f"{config_name}.yaml"
+    if not path.is_file():
+        available = sorted(p.stem for p in CONFIG_DIR.glob("*.yaml")) if CONFIG_DIR.is_dir() else []
+        raise FileNotFoundError(
+            f"config {config_name!r} not found at {path}. available: {available}"
+        )
+    return path
 
 
-def _make_broken_dag(yaml_path: Path, error: Exception):
-    """Register a DAG whose only task re-raises the YAML parse error.
+@dag(
+    dag_id="dlt_pipeline",
+    description="Run a dlt pipeline defined by a YAML config; pick the YAML via the config_name DAG run param.",
+    start_date=datetime(2026, 1, 1),
+    schedule=None,
+    catchup=False,
+    max_active_runs=4,
+    default_args={
+        "owner": "data-team",
+        "retries": 2,
+        "retry_delay": timedelta(seconds=30),
+    },
+    params={"config_name": "stackoverflow"},
+    tags=["dlt"],
+)
+def dlt_pipeline_dag():
+    @task
+    def run() -> dict:
+        # Lazy import: dlt pulls pyarrow at module load; keeping it out of the
+        # DAG file's top-level imports avoids a numpy/pyarrow Cython init-order
+        # bug under DagBag's parse subprocess (see the secrets_client rename
+        # commit for context).
+        from airflow.sdk import get_current_context
 
-    Better than silently skipping the file: operators see a failing DAG in
-    Airflow rather than a missing one.
-    """
-    dag_id = f"dlt_broken__{yaml_path.stem}"
+        from airflow_dlt.dlt_pipeline import build_pipeline
 
-    @dag(
-        dag_id=dag_id,
-        description=f"BROKEN pipeline config {yaml_path.name}: {error!r}",
-        start_date=datetime(2026, 1, 1),
-        schedule=None,
-        catchup=False,
-        default_args={"owner": "data-team", "retries": 0},
-        tags=["dlt", "broken-config"],
-        auto_register=False,  # see _make_dag for rationale
-    )
-    def _broken_dag():
-        @task
-        def fail() -> None:
-            raise RuntimeError(
-                f"Pipeline config {yaml_path} failed to parse: {error!r}"
-            )
+        # Fetch DAG run params explicitly rather than relying on Airflow's
+        # @task auto-injection of `params: dict` — both work, but the
+        # explicit form is unambiguous to humans and to static analyzers.
+        params = get_current_context()["params"]
+        config_name = params["config_name"]
+        config_path = _resolve_config_path(config_name)
+        log.info("Loading pipeline config from %s", config_path)
 
-        fail()
+        cfg = load_config(config_path)
+        secrets = MockDelineaClient(SECRETS_FILE) if SECRETS_FILE.is_file() else None
+        # SQLite endpoints don't need secrets; allow running without a file
+        # when both source and target are auth-free. build_pipeline will only
+        # call secrets.get() when a connector has a secret_id.
+        if secrets is None:
+            from airflow_dlt.secrets_client import SecretsClient
 
-    return _broken_dag()
+            class _Empty(SecretsClient):
+                def get(self, sid):
+                    raise KeyError(f"no secrets file at {SECRETS_FILE}; needed for {sid}")
 
+            secrets = _Empty()
 
-def _register_all(config_dir: Path | None = None) -> dict[str, Any]:
-    """Walk ``config_dir`` and return ``{dag_id: dag_object}``.
+        pipeline, source = build_pipeline(cfg, secrets)
+        log.info(
+            "Running dlt pipeline %s → dataset %s (%d tables)",
+            pipeline.pipeline_name,
+            pipeline.dataset_name,
+            len(cfg.tables.include),
+        )
+        load_info = pipeline.run(source)
+        log.info("Load complete: %s", load_info)
+        return {
+            "pipeline": pipeline.pipeline_name,
+            "dataset": pipeline.dataset_name,
+            "loads_ids": list(load_info.loads_ids),
+        }
 
-    Side-effect free so tests can call this directly. The module-level
-    code below merges the return value into ``globals()`` so Airflow's
-    DAG processor picks them up.
-
-    Any failure to register a single file — YAML parse error, invalid
-    cron, malformed DAG ID, or a duplicate ``pipeline.name`` — becomes a
-    ``dlt_broken__<filename>`` DAG instead of a module-level import
-    error that would hide every other DAG in the directory.
-    """
-    config_dir = config_dir or CONFIG_DIR
-    registered: dict[str, Any] = {}
-    if not config_dir.is_dir():
-        log.warning("CONFIG_DIR %s does not exist; no pipeline DAGs registered", config_dir)
-        return registered
-
-    seen_dag_ids: dict[str, Path] = {}
-
-    for yaml_path in sorted(config_dir.glob("*.yaml")):
-        try:
-            cfg = load_config(yaml_path)
-            dag_id = f"dlt_{cfg.pipeline.name}"
-            if dag_id in seen_dag_ids:
-                raise ValueError(
-                    f"duplicate dag_id {dag_id!r}: also produced by "
-                    f"{seen_dag_ids[dag_id]}. Two YAMLs share pipeline.name "
-                    f"{cfg.pipeline.name!r}."
-                )
-            d = _make_dag(yaml_path, cfg)
-            # Airflow 3 defers schedule/timetable validation: DAG() succeeds
-            # for invalid cron strings and only DagBag.validate() raises later
-            # — outside this try/except. Force validation now so bad schedules
-            # surface as dlt_broken__* DAGs instead of as a module-level
-            # import error that hides every sibling DAG.
-            d.validate()
-        except Exception as exc:  # noqa: BLE001 - surface any failure as a broken DAG
-            log.error("Failed to register pipeline from %s: %r", yaml_path, exc)
-            broken = _make_broken_dag(yaml_path, exc)
-            registered[broken.dag_id] = broken
-            continue
-
-        seen_dag_ids[dag_id] = yaml_path
-        registered[d.dag_id] = d
-
-    return registered
+    run()
 
 
-for _dag_id, _dag in _register_all().items():
-    globals()[_dag_id] = _dag
+dlt_pipeline_dag()

@@ -1,11 +1,8 @@
 # Example: replicate the `app` schema from one Postgres into another.
-# Registers as Airflow dag: dlt_pg_app_replication
+# Trigger the `dlt_pipeline` DAG with:  {"config_name": "example_postgres_to_postgres"}
 
 pipeline:
   name: pg_app_replication
-  schedule: null
-  retries: 3
-  retry_delay_seconds: 30
 
 source:
   type: postgres
