@@ -105,16 +105,28 @@ client by implementing `SecretsClient.get` and threading it through the DAG.
 
 ## Testing
 
+Three layers, each more expensive than the last:
+
 ```bash
-# Plugin unit tests (no Airflow runtime required)
+# 1. Plugin unit tests — no Airflow, no Docker required
 PYTHONPATH=plugins uv run --no-project \
   --with "dlt[sql_database]" --with pydantic --with pyyaml --with pytest \
   pytest tests/plugins -v
 
-# DAG integrity tests (requires Airflow installed)
-uv sync
-uv run pytest tests/dags -v
+# 2. Plugin + DAG integrity tests (default for the project venv)
+uv sync --extra dev
+uv run pytest tests/ -v
+
+# 3. Integration tests — Docker required, ODBC 18 + unixODBC required on host
+#    Spins up real MSSQL + Postgres via testcontainers, runs build_pipeline().run(),
+#    asserts seeded rows land in Postgres.
+brew install unixodbc msodbcsql18      # one-time on macOS; Linux: apt msodbcsql18 unixodbc-dev
+uv sync --extra dev --extra integration
+uv run pytest tests/integration -v -m integration
 ```
+
+Integration tests are excluded from default runs via a pytest marker, so layer
+1 and 2 stay fast and Docker-free.
 
 ## What dlt replaces
 

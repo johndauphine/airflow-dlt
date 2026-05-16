@@ -65,19 +65,25 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+integration = [
+    { name = "psycopg2-binary" },
+    { name = "testcontainers", extra = ["mssql"] },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "apache-airflow", specifier = "==3.0.0" },
     { name = "apache-airflow-providers-postgres", specifier = ">=5.12.0" },
     { name = "dlt", extras = ["postgres", "sql-database"], specifier = ">=1.5.0" },
+    { name = "psycopg2-binary", marker = "extra == 'integration'", specifier = ">=2.9" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pyodbc", specifier = ">=5.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "testcontainers", extras = ["mssql", "postgres"], marker = "extra == 'integration'", specifier = ">=4.7" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "integration"]
 
 [[package]]
 name = "alembic"
@@ -654,6 +660,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/8b/57666417c0f90f08bcafa776861060426765fdb422eb10212086fb811d26/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f", size = 368251, upload-time = "2025-09-07T18:58:00.022Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af", size = 331094, upload-time = "2025-09-07T18:57:58.071Z" },
+]
+
+[[package]]
+name = "docker"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/9b/4a2ea29aeba62471211598dac5d96825bb49348fa07e906ea930394a83ce/docker-7.1.0.tar.gz", hash = "sha256:ad8c70e6e3f8926cb8a92619b832b4ea5299e2831c14284663184e200546fa6c", size = 117834, upload-time = "2024-05-23T11:13:57.216Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/26/57c6fb270950d476074c087527a558ccb6f4436657314bfb6cdf484114c4/docker-7.1.0-py3-none-any.whl", hash = "sha256:c96b93b7f0a746f9e77d325bcfb87422a3d8bd4f03136ae8a85b37f1898d5fc0", size = 147774, upload-time = "2024-05-23T11:13:55.01Z" },
 ]
 
 [[package]]
@@ -1701,6 +1721,28 @@ wheels = [
 ]
 
 [[package]]
+name = "pymssql"
+version = "2.3.13"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/cc/843c044b7f71ee329436b7327c578383e2f2499313899f88ad267cdf1f33/pymssql-2.3.13.tar.gz", hash = "sha256:2137e904b1a65546be4ccb96730a391fcd5a85aab8a0632721feb5d7e39cfbce", size = 203153, upload-time = "2026-02-14T05:00:36.865Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/20/3d270f2bcfe7cf73b6d17719998316856550ca719791ac00be07e5be7a47/pymssql-2.3.13-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:152be40c0d7f5e4b1323f7728b0a01f3ee0082190cfbadf84b2c2e930d57e00e", size = 3171876, upload-time = "2026-02-14T04:59:33.247Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/b0/b4f1c7879a4fdac688f227cc55f31a5cfc8c36dc63117a10af472a399fc1/pymssql-2.3.13-cp311-cp311-macosx_15_0_x86_64.whl", hash = "sha256:d94da3a55545c5b6926cb4d1c6469396f0ae32ad5d6932c513f7a0bf569b4799", size = 2973968, upload-time = "2026-02-14T04:59:35.462Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/68/45157f1bb9b8499e4abe7b64195f44aaa2d6bf6aae305d4e8cf5df522424/pymssql-2.3.13-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:51e42c5defc3667f0803c7ade85db0e6f24b9a1c5a18fcdfa2d09c36bff9b065", size = 3035519, upload-time = "2026-02-14T04:59:37.138Z" },
+    { url = "https://files.pythonhosted.org/packages/57/f3/3aeffc2b3683c135d75e0536657090ddb5f07114eb5e528303e1f4880393/pymssql-2.3.13-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4aa18944a121f996178e26cadc598abdbf73759f03dc3cd74263fdab1b28cd96", size = 3162703, upload-time = "2026-02-14T04:59:39.571Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/c0/bd35090a223961d9190dfb884be14529358d561cad1b4211dc351b20dcfd/pymssql-2.3.13-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:910404e0ec85c4cc7c633ec3df9b04a35f23bb74a844dd377a387026ae635e3a", size = 3681162, upload-time = "2026-02-14T04:59:42.181Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/d4/d6a5d74c9942d1554538087cfd6ff489d3645bce484c53339f25c4cf6077/pymssql-2.3.13-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:4b834c34e7600369eee7bc877948b53eb0fe6f3689f0888d005ae47dd53c0a66", size = 3424100, upload-time = "2026-02-14T04:59:43.795Z" },
+    { url = "https://files.pythonhosted.org/packages/27/38/7f1eff7dbbd286a16e341b813fd55c88258e07268a3ccebbfb0e9c46ca74/pymssql-2.3.13-cp311-cp311-win_amd64.whl", hash = "sha256:5c2e55b6513f9c5a2f58543233ed40baaa7f91c79e64a5f961ea3fc57a700b80", size = 2010201, upload-time = "2026-02-14T04:59:45.404Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/60/a2e8a8a38f7be21d54402e2b3365cd56f1761ce9f2706c97f864e8aa8300/pymssql-2.3.13-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:cf4f32b4a05b66f02cb7d55a0f3bcb0574a6f8cf0bee4bea6f7b104038364733", size = 3158689, upload-time = "2026-02-14T04:59:46.982Z" },
+    { url = "https://files.pythonhosted.org/packages/43/9e/0cf0ffb9e2f73238baf766d8e31d7237b5bee3cc1bb29a376b404610994a/pymssql-2.3.13-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:2b056eb175955f7fb715b60dc1c0c624969f4d24dbdcf804b41ab1e640a2b131", size = 2960018, upload-time = "2026-02-14T04:59:48.668Z" },
+    { url = "https://files.pythonhosted.org/packages/93/ea/bc27354feaca717faa4626911f6b19bb62985c87dda28957c63de4de5895/pymssql-2.3.13-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:319810b89aa64b99d9c5c01518752c813938df230496fa2c4c6dda0603f04c4c", size = 3065719, upload-time = "2026-02-14T04:59:50.369Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/7a/8028681c96241fb5fc850b87c8959402c353e4b83c6e049a99ffa67ded54/pymssql-2.3.13-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c0ea72641cb0f8bce7ad8565dbdbda4a7437aa58bce045f2a3a788d71af2e4be", size = 3190567, upload-time = "2026-02-14T04:59:52.202Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/f1/ab5b76adbbd6db9ce746d448db34b044683522e7e7b95053f9dd0165297b/pymssql-2.3.13-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:1493f63d213607f708a5722aa230776ada726ccdb94097fab090a1717a2534e0", size = 3710481, upload-time = "2026-02-14T04:59:54.01Z" },
+    { url = "https://files.pythonhosted.org/packages/59/aa/2fa0951475cd0a1829e0b8bfbe334d04ece4bce11546a556b005c4100689/pymssql-2.3.13-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:eb3275985c23479e952d6462ae6c8b2b6993ab6b99a92805a9c17942cf3d5b3d", size = 3453789, upload-time = "2026-02-14T04:59:56.841Z" },
+    { url = "https://files.pythonhosted.org/packages/78/08/8cd2af9003f9fc03912b658a64f5a4919dcd68f0dd3bbc822b49a3d14fd9/pymssql-2.3.13-cp312-cp312-win_amd64.whl", hash = "sha256:a930adda87bdd8351a5637cf73d6491936f34e525a5e513068a6eac742f69cdb", size = 1994709, upload-time = "2026-02-14T04:59:58.972Z" },
+]
+
+[[package]]
 name = "pyodbc"
 version = "5.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2314,6 +2356,28 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/79/cf31d7a93a8fdc6aa0fbb665be84426a8c5a557d9240b6239e9e11e35fc5/termcolor-3.3.0.tar.gz", hash = "sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5", size = 14434, upload-time = "2025-12-29T12:55:21.882Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/33/d1/8bb87d21e9aeb323cc03034f5eaf2c8f69841e40e4853c2627edf8111ed3/termcolor-3.3.0-py3-none-any.whl", hash = "sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5", size = 7734, upload-time = "2025-12-29T12:55:20.718Z" },
+]
+
+[[package]]
+name = "testcontainers"
+version = "4.13.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docker" },
+    { name = "python-dotenv" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/b3/c272537f3ea2f312555efeb86398cc382cd07b740d5f3c730918c36e64e1/testcontainers-4.13.3.tar.gz", hash = "sha256:9d82a7052c9a53c58b69e1dc31da8e7a715e8b3ec1c4df5027561b47e2efe646", size = 79064, upload-time = "2025-11-14T05:08:47.584Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/27/c2f24b19dafa197c514abe70eda69bc031c5152c6b1f1e5b20099e2ceedd/testcontainers-4.13.3-py3-none-any.whl", hash = "sha256:063278c4805ffa6dd85e56648a9da3036939e6c0ac1001e851c9276b19b05970", size = 124784, upload-time = "2025-11-14T05:08:46.053Z" },
+]
+
+[package.optional-dependencies]
+mssql = [
+    { name = "pymssql" },
+    { name = "sqlalchemy" },
 ]
 
 [[package]]

@@ -113,5 +113,60 @@ BEGIN
 END
 GO
 
+-- A handful of rows per table so an end-to-end docker-compose run has
+-- real data to migrate. Idempotent: skips if the table already has rows.
+IF NOT EXISTS (SELECT 1 FROM dbo.Users)
+BEGIN
+    SET IDENTITY_INSERT dbo.Users ON;
+    INSERT INTO dbo.Users (Id, DisplayName, Reputation, CreationDate, LastAccessDate) VALUES
+        (1, 'alice',    100, '2025-01-01', '2026-04-01'),
+        (2, 'bob',      250, '2025-02-01', '2026-04-15'),
+        (3, 'carol',     42, '2025-03-01', '2026-04-20'),
+        (4, 'dave',    1024, '2025-04-01', '2026-05-01'),
+        (5, 'eve',        7, '2025-05-01', '2026-05-10');
+    SET IDENTITY_INSERT dbo.Users OFF;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.PostTypes)
+BEGIN
+    INSERT INTO dbo.PostTypes (Id, Type) VALUES (1, 'Question'), (2, 'Answer');
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Posts)
+BEGIN
+    SET IDENTITY_INSERT dbo.Posts ON;
+    INSERT INTO dbo.Posts (Id, OwnerUserId, PostTypeId, Title, Body, CreationDate) VALUES
+        (1, 1, 1, 'first question', 'body1', '2026-01-01'),
+        (2, 2, 2, 'first answer',   'body2', '2026-01-02'),
+        (3, 1, 1, 'second question','body3', '2026-02-01'),
+        (4, 3, 2, 'second answer',  'body4', '2026-02-02');
+    SET IDENTITY_INSERT dbo.Posts OFF;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Comments)
+BEGIN
+    SET IDENTITY_INSERT dbo.Comments ON;
+    INSERT INTO dbo.Comments (Id, PostId, UserId, Text, CreationDate) VALUES
+        (1, 1, 2, 'nice question', '2026-01-03'),
+        (2, 2, 1, 'thanks',        '2026-01-04');
+    SET IDENTITY_INSERT dbo.Comments OFF;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.VoteTypes)
+BEGIN
+    INSERT INTO dbo.VoteTypes (Id, Name) VALUES (2, 'UpMod'), (3, 'DownMod');
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.LinkTypes)
+BEGIN
+    INSERT INTO dbo.LinkTypes (Id, Type) VALUES (1, 'Linked'), (3, 'Duplicate');
+END
+GO
+
 PRINT 'StackOverflow2010 seed complete.';
 GO

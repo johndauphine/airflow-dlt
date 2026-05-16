@@ -37,23 +37,33 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
 
 ## Running tests
 
-Plugin tests don't need Airflow:
+Three layers:
 
-```bash
-PYTHONPATH=plugins uv run --no-project \
-  --with "dlt[sql_database]" --with pydantic --with pyyaml --with pytest \
-  pytest tests/plugins -v
-```
+1. **Plugin unit tests** (no Airflow, no Docker):
+   ```bash
+   PYTHONPATH=plugins uv run --no-project \
+     --with "dlt[sql_database]" --with pydantic --with pyyaml --with pytest \
+     pytest tests/plugins -v
+   ```
+2. **Plugin + DAG integrity tests** (requires `uv sync`):
+   ```bash
+   uv run pytest tests/ -v
+   ```
+3. **Integration tests** — `tests/integration/`, marked `@pytest.mark.integration`,
+   excluded by default via `addopts = "-m 'not integration'"` in pyproject.
+   Requires Docker, unixODBC, and ODBC Driver 18 on the host. Spins up real
+   MSSQL + Postgres via `testcontainers`, runs `build_pipeline(...).run()`,
+   asserts seeded rows land in Postgres.
+   ```bash
+   uv sync --extra dev --extra integration
+   uv run pytest tests/integration -m integration -v
+   ```
 
-DAG integrity tests need Airflow:
-
-```bash
-uv sync && uv run pytest tests/dags -v
-```
-
-End-to-end (docker-compose, real MSSQL + Postgres) is the only way to
-exercise `build_pipeline` fully — dlt's `sql_database` reflects the source
-schema at runtime.
+When adding integration tests:
+- Reuse the session-scoped `mssql_container` / `postgres_container` fixtures
+  in `tests/integration/conftest.py` — they pay the ~30s SQL Server boot once.
+- Don't import `testcontainers` at module top — guard with `pytest.importorskip`
+  so hosts without it still collect the rest of the test suite cleanly.
 
 ## What's deliberately not here
 

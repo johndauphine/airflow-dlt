@@ -18,10 +18,20 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.4",
 ]
+integration = [
+    "testcontainers[mssql,postgres]>=4.7",
+    "psycopg2-binary>=2.9",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["plugins"]
+markers = [
+    "integration: tests requiring Docker (testcontainers-driven MSSQL + Postgres)",
+]
+# Skip integration tests by default; enable with `pytest -m integration` or
+# `pytest --override-ini='addopts=' tests/integration`.
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 line-length = 100
