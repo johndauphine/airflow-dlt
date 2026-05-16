@@ -21,7 +21,7 @@ os.environ.setdefault("PIPELINE_CONFIG_DIR", str(REPO / "config" / "pipelines"))
 os.environ.setdefault("PIPELINE_SECRETS_FILE", str(REPO / "config" / "secrets.yaml.example"))
 sys.path.insert(0, str(REPO / "plugins"))
 
-from airflow.models import DagBag
+from airflow.models import DagBag  # noqa: E402 - must follow sys.path setup above
 
 
 @pytest.fixture(scope="module")
@@ -117,12 +117,10 @@ def test_invalid_schedule_yields_broken_dag(tmp_path):
 
     registered = register_all(tmp_path)
     assert "dlt_good_two" in registered
-    # The bad-cron file should NOT silently disappear; either it parses
-    # successfully (Airflow accepts the string as a one-off timetable name)
-    # or it registers as broken. Either way the good DAG must still exist.
-    bad_present = "dlt_bad_cron_pipeline" in registered
-    broken_present = "dlt_broken__bad_cron" in registered
-    assert bad_present or broken_present
+    # The bad-cron file MUST register as broken (not as a normal DAG that
+    # would later blow up DagBag.validate() and hide every sibling DAG).
+    assert "dlt_bad_cron_pipeline" not in registered
+    assert "dlt_broken__bad_cron" in registered
 
 
 def test_duplicate_pipeline_name_yields_broken_dag(tmp_path):

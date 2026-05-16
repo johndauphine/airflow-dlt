@@ -16,6 +16,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from airflow.decorators import dag, task
 
@@ -132,6 +133,12 @@ def _register_all(config_dir: Path | None = None) -> dict[str, Any]:
                     f"{cfg.pipeline.name!r}."
                 )
             d = _make_dag(yaml_path, cfg)
+            # Airflow 3 defers schedule/timetable validation: DAG() succeeds
+            # for invalid cron strings and only DagBag.validate() raises later
+            # — outside this try/except. Force validation now so bad schedules
+            # surface as dlt_broken__* DAGs instead of as a module-level
+            # import error that hides every sibling DAG.
+            d.validate()
         except Exception as exc:  # noqa: BLE001 - surface any failure as a broken DAG
             log.error("Failed to register pipeline from %s: %r", yaml_path, exc)
             broken = _make_broken_dag(yaml_path, exc)
