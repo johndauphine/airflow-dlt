@@ -79,7 +79,7 @@ target:
   host: postgres-target
   port: 5432
   database: stackoverflow
-  schema_alias: dev                       # → dataset "dev__stackoverflow2010__dbo"
+  schema_alias: dev                       # → dataset "dev_stackoverflow2010_dbo"
 
 tables:
   include: [Users, Posts, Comments]

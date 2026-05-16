@@ -22,7 +22,7 @@ target:
   host: postgres-target
   port: 5432
   database: warehouse
-  schema_alias: prod    # → dataset name "prod__app__public"
+  schema_alias: prod    # → dataset name "prod_app_public"
 
 tables:
   include:

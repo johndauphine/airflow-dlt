@@ -26,8 +26,12 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
   resolve them at runtime. To plug in real Delinea, implement
   `SecretsClient.get` and swap the client in the DAG.
 - **Dataset naming**: dlt's `dataset_name` doubles as the Postgres schema.
-  We derive `{alias}__{db}__{schema}` when the source has a schema, and
-  `{alias}__{db}` when it doesn't (e.g. MySQL, SQLite). No hardcoded
+  We derive `{alias}_{db}_{schema}` when the source has a schema, and
+  `{alias}_{db}` when it doesn't (e.g. MySQL, SQLite). Single underscore
+  separator deliberately — dlt's postgres destination collapses consecutive
+  underscores in schema names, so `__` would silently become `_` at the
+  destination and `pipeline.dataset_name` would diverge from the real
+  postgres schema. No hardcoded
   fallback names. Don't rename `pipeline.name` casually — dlt state is
   keyed on it, and so is the DAG ID.
 
