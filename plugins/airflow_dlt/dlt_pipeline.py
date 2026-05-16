@@ -42,13 +42,18 @@ def _apply_table_overrides(source: Any, overrides: dict[str, TableOverride]) -> 
             resource.apply_hints(**hints)
 
 
+def _resolve(secrets: SecretsClient, secret_id: str | None) -> dict[str, str]:
+    """Return credentials dict, or {} for endpoints with no auth (SQLite)."""
+    return secrets.get(secret_id) if secret_id else {}
+
+
 def build_pipeline(cfg: PipelineConfig, secrets: SecretsClient) -> tuple[Any, Any]:
     """Return a ``(pipeline, source)`` pair ready for ``pipeline.run(source)``."""
     src = make_source_connector(cfg.source)
     tgt = make_target_connector(cfg.target)
 
     source = sql_database(
-        credentials=src.sqlalchemy_url(secrets.get(cfg.source.secret_id)),
+        credentials=src.sqlalchemy_url(_resolve(secrets, cfg.source.secret_id)),
         schema=src.schema_name(),
         table_names=cfg.tables.include,
         chunk_size=cfg.load.chunk_size,
@@ -63,7 +68,7 @@ def build_pipeline(cfg: PipelineConfig, secrets: SecretsClient) -> tuple[Any, An
     )
     pipeline = dlt.pipeline(
         pipeline_name=cfg.pipeline.name,
-        destination=tgt.build_destination(secrets.get(cfg.target.secret_id)),
+        destination=tgt.build_destination(_resolve(secrets, cfg.target.secret_id)),
         dataset_name=dataset_name,
     )
     return pipeline, source

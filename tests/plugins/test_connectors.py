@@ -12,11 +12,19 @@ import pytest
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("dlt")
 
-from airflow_dlt.config import MssqlSourceCfg, PostgresSourceCfg, PostgresTargetCfg
+from airflow_dlt.config import (
+    MssqlSourceCfg,
+    PostgresSourceCfg,
+    PostgresTargetCfg,
+    SqliteSourceCfg,
+    SqliteTargetCfg,
+)
 from airflow_dlt.connectors import (
     MssqlSource,
     PostgresSource,
     PostgresTarget,
+    SqliteSource,
+    SqliteTarget,
     make_source_connector,
     make_target_connector,
 )
@@ -141,13 +149,75 @@ def test_postgres_target_sslmode_query_added():
 
 
 # ---------------------------------------------------------------------------
+# SQLite source
+# ---------------------------------------------------------------------------
+
+def _sqlite_source_cfg(**overrides) -> SqliteSourceCfg:
+    base = {"type": "sqlite", "path": "/data/source.db"}
+    base.update(overrides)
+    return SqliteSourceCfg.model_validate(base)
+
+
+def test_sqlite_source_url_absolute():
+    """Absolute paths produce 4-slash sqlite:////abs/path URLs."""
+    url = SqliteSource(_sqlite_source_cfg(path="/data/source.db")).sqlalchemy_url({})
+    assert url == "sqlite:////data/source.db"
+
+
+def test_sqlite_source_url_relative():
+    """Relative paths produce 3-slash sqlite:///rel/path URLs."""
+    url = SqliteSource(_sqlite_source_cfg(path="data/source.db")).sqlalchemy_url({})
+    assert url == "sqlite:///data/source.db"
+
+
+def test_sqlite_source_url_memory():
+    url = SqliteSource(_sqlite_source_cfg(path=":memory:")).sqlalchemy_url({})
+    assert url == "sqlite:///:memory:"
+
+
+def test_sqlite_source_no_creds_required():
+    """SqliteSource must not raise when given an empty creds dict."""
+    SqliteSource(_sqlite_source_cfg()).sqlalchemy_url({})
+
+
+def test_sqlite_source_database_name_uses_file_stem():
+    assert SqliteSource(_sqlite_source_cfg(path="/var/lib/myapp.db")).database_name() == "myapp"
+    assert SqliteSource(_sqlite_source_cfg(path=":memory:")).database_name() == "memory"
+
+
+def test_sqlite_source_schema_is_none():
+    """SQLite has no schema concept — must return None so dataset naming
+    drops the __{schema} segment."""
+    assert SqliteSource(_sqlite_source_cfg()).schema_name() is None
+
+
+# ---------------------------------------------------------------------------
+# SQLite target
+# ---------------------------------------------------------------------------
+
+def _sqlite_target_cfg(**overrides) -> SqliteTargetCfg:
+    base = {"type": "sqlite", "path": "/data/target.db", "schema_alias": "dev"}
+    base.update(overrides)
+    return SqliteTargetCfg.model_validate(base)
+
+
+def test_sqlite_target_build_destination_returns_dlt_destination():
+    """Smoke test that we can construct the destination at all."""
+    dest = SqliteTarget(_sqlite_target_cfg(path=":memory:")).build_destination({})
+    # dlt wraps factories; class name is "sqlalchemy" for this destination type
+    assert type(dest).__name__ == "sqlalchemy"
+
+
+# ---------------------------------------------------------------------------
 # Registry dispatch
 # ---------------------------------------------------------------------------
 
 def test_registry_dispatch_source():
     assert isinstance(make_source_connector(_mssql_cfg()), MssqlSource)
     assert isinstance(make_source_connector(_pg_source_cfg()), PostgresSource)
+    assert isinstance(make_source_connector(_sqlite_source_cfg()), SqliteSource)
 
 
 def test_registry_dispatch_target():
     assert isinstance(make_target_connector(_pg_target_cfg()), PostgresTarget)
+    assert isinstance(make_target_connector(_sqlite_target_cfg()), SqliteTarget)

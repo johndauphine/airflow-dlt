@@ -57,11 +57,18 @@ Three layers:
    ```bash
    uv run pytest tests/ -v
    ```
-3. **Integration tests** — `tests/integration/`, marked `@pytest.mark.integration`,
-   excluded by default via `addopts = "-m 'not integration'"` in pyproject.
-   Requires Docker, unixODBC, and ODBC Driver 18 on the host. Spins up real
-   MSSQL + Postgres via `testcontainers`, runs `build_pipeline(...).run()`,
-   asserts seeded rows land in Postgres.
+3. **SQLite end-to-end smoke test** — `tests/integration/test_sqlite_smoke.py`.
+   No `@pytest.mark.integration` marker, so it runs by default. Uses dlt's
+   `sqlalchemy` destination + Python stdlib `sqlite3`; no Docker, no host
+   drivers. This is the CI regression guard for the connector pattern.
+   *Note*: dlt's sqlalchemy/SQLite destination writes data into a sibling
+   file named `{target_stem}__{dataset_name}.db`, not the target path
+   itself — the target.db acts as a state anchor. The test helper finds
+   the data file by globbing, so it tolerates dlt's naming choices.
+4. **Container-backed integration tests** — `tests/integration/test_*.py`
+   except the SQLite smoke test. Marked `@pytest.mark.integration`,
+   excluded by default. Requires Docker, unixODBC, and ODBC Driver 18 on
+   the host. Spins up real MSSQL + Postgres via `testcontainers`.
    ```bash
    uv sync --extra dev --extra integration
    uv run pytest tests/integration -m integration -v

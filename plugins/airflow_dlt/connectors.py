@@ -22,11 +22,15 @@ from urllib.parse import quote
 import dlt
 from sqlalchemy.engine.url import URL
 
+from pathlib import Path
+
 from airflow_dlt.config import (
     MssqlSourceCfg,
     PostgresSourceCfg,
     PostgresTargetCfg,
     SourceConfig,
+    SqliteSourceCfg,
+    SqliteTargetCfg,
     TargetConfig,
 )
 
@@ -102,6 +106,31 @@ class PostgresSource(SourceConnector):
         return self.cfg.schema_
 
 
+class SqliteSource(SourceConnector):
+    """SQLite source. Uses the file path as the database identifier."""
+
+    def __init__(self, cfg: SqliteSourceCfg) -> None:
+        self.cfg = cfg
+
+    def sqlalchemy_url(self, creds: dict[str, str]) -> str:
+        # creds intentionally unused — SQLite has no auth.
+        # Absolute paths produce sqlite:////abs/path (4 slashes); relative
+        # paths produce sqlite:///rel/path (3 slashes). The f-string yields
+        # both correctly since absolute paths already start with '/'.
+        return f"sqlite:///{self.cfg.path}"
+
+    def database_name(self) -> str:
+        # Use the file stem so dataset names stay readable
+        # (e.g. /data/source.db → "source").
+        path = self.cfg.path
+        if path == ":memory:":
+            return "memory"
+        return Path(path).stem or "sqlite"
+
+    def schema_name(self) -> str | None:
+        return None
+
+
 # ===========================================================================
 # Target connectors
 # ===========================================================================
@@ -137,6 +166,21 @@ class PostgresTarget(TargetConnector):
         )
 
 
+class SqliteTarget(TargetConnector):
+    """SQLite target via dlt's sqlalchemy destination.
+
+    Useful for CI smoke tests where spinning up a Postgres/MSSQL container is
+    overkill. dlt writes tables directly into the target SQLite file.
+    """
+
+    def __init__(self, cfg: SqliteTargetCfg) -> None:
+        self.cfg = cfg
+
+    def build_destination(self, creds: dict[str, str]) -> Any:
+        # creds intentionally unused — SQLite has no auth.
+        return dlt.destinations.sqlalchemy(credentials=f"sqlite:///{self.cfg.path}")
+
+
 # ===========================================================================
 # Registries — used by build_pipeline to dispatch on cfg.source.type / cfg.target.type
 # ===========================================================================
@@ -144,10 +188,12 @@ class PostgresTarget(TargetConnector):
 SOURCE_CONNECTORS: dict[str, type[SourceConnector]] = {
     "mssql": MssqlSource,
     "postgres": PostgresSource,
+    "sqlite": SqliteSource,
 }
 
 TARGET_CONNECTORS: dict[str, type[TargetConnector]] = {
     "postgres": PostgresTarget,
+    "sqlite": SqliteTarget,
 }
 
 

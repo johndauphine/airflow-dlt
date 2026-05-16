@@ -61,8 +61,19 @@ class PostgresSourceCfg(_Model):
     options: dict[str, str] = Field(default_factory=dict)
 
 
+class SqliteSourceCfg(_Model):
+    """SQLite source — file-based, no host/port/credentials.
+
+    Path can be relative or absolute, or ``:memory:`` for an in-memory DB
+    (only useful for tests where source and target share the same process).
+    """
+    type: Literal["sqlite"]
+    path: str
+    secret_id: str | None = None   # SQLite has no auth; field exists for shape parity
+
+
 SourceConfig = Annotated[
-    Union[MssqlSourceCfg, PostgresSourceCfg],
+    Union[MssqlSourceCfg, PostgresSourceCfg, SqliteSourceCfg],
     Field(discriminator="type"),
 ]
 
@@ -81,10 +92,16 @@ class PostgresTargetCfg(_Model):
     sslmode: str | None = None
 
 
-# Union-of-one keeps the discriminator pattern intact; adding Snowflake later
-# only requires a new model + adding it to this Union.
+class SqliteTargetCfg(_Model):
+    """SQLite target — primarily for CI/tests without a database server."""
+    type: Literal["sqlite"]
+    path: str
+    schema_alias: str
+    secret_id: str | None = None   # field exists for shape parity; SQLite has no auth
+
+
 TargetConfig = Annotated[
-    Union[PostgresTargetCfg],
+    Union[PostgresTargetCfg, SqliteTargetCfg],
     Field(discriminator="type"),
 ]
 

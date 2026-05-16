@@ -1,0 +1,29 @@
+# SQLite → SQLite. Useful as a smoke test that runs anywhere — no Docker, no
+# Postgres/MSSQL needed. The paths are placeholders; create the source file
+# yourself before triggering the DAG, or point at any real .db file.
+#
+# Registers as Airflow dag: dlt_sqlite_smoke
+
+pipeline:
+  name: sqlite_smoke
+  schedule: null
+  retries: 1
+  retry_delay_seconds: 10
+
+source:
+  type: sqlite
+  path: /tmp/source.db
+
+target:
+  type: sqlite
+  path: /tmp/target.db
+  schema_alias: ci
+
+tables:
+  include:
+    - customers
+    - orders
+
+load:
+  write_disposition: replace
+  chunk_size: 1000

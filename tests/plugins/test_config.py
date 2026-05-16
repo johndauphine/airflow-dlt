@@ -7,6 +7,8 @@ from airflow_dlt.config import (
     MssqlSourceCfg,
     PostgresSourceCfg,
     PostgresTargetCfg,
+    SqliteSourceCfg,
+    SqliteTargetCfg,
     load_config,
 )
 
@@ -153,6 +155,49 @@ tables:
 """
     with pytest.raises(ValidationError):
         load_config(_write(tmp_path, bad))
+
+
+def test_load_sqlite_to_sqlite_config(tmp_path):
+    body = """
+pipeline:
+  name: sqlite_only
+source:
+  type: sqlite
+  path: /tmp/source.db
+target:
+  type: sqlite
+  path: /tmp/target.db
+  schema_alias: ci
+tables:
+  include: [users]
+"""
+    cfg = load_config(_write(tmp_path, body))
+    assert isinstance(cfg.source, SqliteSourceCfg)
+    assert isinstance(cfg.target, SqliteTargetCfg)
+    assert cfg.source.path == "/tmp/source.db"
+    assert cfg.source.secret_id is None
+    assert cfg.target.path == "/tmp/target.db"
+    assert cfg.target.schema_alias == "ci"
+
+
+def test_sqlite_source_rejects_postgres_specific_keys(tmp_path):
+    """`host` only belongs on postgres/mssql sources; forbidden on sqlite."""
+    body = """
+pipeline:
+  name: p1
+source:
+  type: sqlite
+  path: /tmp/x.db
+  host: somewhere
+target:
+  type: sqlite
+  path: /tmp/y.db
+  schema_alias: a
+tables:
+  include: [t]
+"""
+    with pytest.raises(ValidationError):
+        load_config(_write(tmp_path, body))
 
 
 def test_defaults_applied_mssql(tmp_path):

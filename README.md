@@ -100,11 +100,13 @@ DAG ID will be `dlt_<pipeline.name>`.
 
 ### Supported endpoint types
 
-| Side    | Type        | Notes                                              |
-|---------|-------------|----------------------------------------------------|
-| Source  | `mssql`     | via pyodbc + ODBC Driver 18; `driver` + `options`  |
-| Source  | `postgres`  | via psycopg2; optional `sslmode`                   |
-| Target  | `postgres`  | via dlt's postgres destination                     |
+| Side    | Type        | Notes                                                                       |
+|---------|-------------|-----------------------------------------------------------------------------|
+| Source  | `mssql`     | via pyodbc + ODBC Driver 18; `driver` + `options`                           |
+| Source  | `postgres`  | via psycopg2; optional `sslmode`                                            |
+| Source  | `sqlite`    | file-based (`path`), no auth — ideal for tests / CI                         |
+| Target  | `postgres`  | via dlt's postgres destination                                              |
+| Target  | `sqlite`    | via dlt's sqlalchemy destination — also for tests / CI without a DB server  |
 
 Source/target configs are Pydantic discriminated unions on `type`. Add a new
 endpoint type by writing one Cfg model in
@@ -142,7 +144,10 @@ uv run pytest tests/integration -v -m integration
 ```
 
 Integration tests are excluded from default runs via a pytest marker, so layer
-1 and 2 stay fast and Docker-free.
+1 and 2 stay fast and Docker-free. The one exception is the SQLite→SQLite
+smoke test in [`tests/integration/test_sqlite_smoke.py`](tests/integration/test_sqlite_smoke.py)
+— it actually runs a `pipeline.run()` end-to-end against SQLite files, but
+needs no infra, so it's intentionally unmarked and runs in CI by default.
 
 ## What dlt replaces
 
