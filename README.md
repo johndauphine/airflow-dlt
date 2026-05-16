@@ -97,6 +97,19 @@ load:
 Adding another pipeline is just another file under `config/pipelines/`. To
 run it, trigger the `dlt_pipeline` DAG with `{"config_name": "<yaml stem>"}`.
 
+### Scheduling a pipeline
+
+`dlt_pipeline` is the **ad-hoc / manual** runner. For scheduled production
+loads, drop a new DAG file in `dags/` with its own cron and point it at a
+specific YAML. The template in [`dags/example_scheduled.py`](dags/example_scheduled.py)
+shows the full pattern — copy it, rename the `dag_id`, set the
+`CONFIG_PATH` and `schedule`, then unpause from the Airflow UI.
+
+The YAML is the source of truth for **what** the pipeline does; the DAG
+controls **when**. You can have multiple DAGs pointing at the same YAML
+(e.g. hourly + daily), and the same YAML can be both scheduled and
+manually triggerable.
+
 ### Supported endpoint types
 
 | Side    | Type        | Notes                                                                       |

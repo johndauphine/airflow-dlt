@@ -27,27 +27,42 @@ def test_dags_parse_without_errors(dagbag: DagBag) -> None:
     assert not dagbag.import_errors, f"DAG parse errors: {dagbag.import_errors}"
 
 
-def test_exactly_one_dag(dagbag: DagBag) -> None:
-    """Single parameterized DAG model: there should be exactly one DAG, not
-    one per YAML."""
-    assert list(dagbag.dag_ids) == ["dlt_pipeline"], (
-        f"expected just dlt_pipeline; got {list(dagbag.dag_ids)}"
+def test_dlt_pipeline_dag_exists(dagbag: DagBag) -> None:
+    """The single parameterized DAG must always be present. Additional
+    user-defined scheduled DAGs (see dags/example_scheduled.py) may
+    coexist alongside it."""
+    assert "dlt_pipeline" in dagbag.dag_ids, (
+        f"dlt_pipeline missing from {list(dagbag.dag_ids)}"
     )
 
 
-def test_dag_accepts_config_name_param(dagbag: DagBag) -> None:
+def test_dlt_pipeline_accepts_config_name_param(dagbag: DagBag) -> None:
     dag = dagbag.dags["dlt_pipeline"]
     assert "config_name" in dag.params
 
 
-def test_dag_has_tags(dagbag: DagBag) -> None:
-    dag = dagbag.dags["dlt_pipeline"]
-    assert dag.tags, "dlt_pipeline DAG must have tags"
+def test_all_dags_have_tags(dagbag: DagBag) -> None:
+    """Every DAG — built-in or user-added — must declare at least one tag."""
+    for dag_id, dag in dagbag.dags.items():
+        assert dag.tags, f"DAG {dag_id} is missing tags"
 
 
-def test_dag_has_retries(dagbag: DagBag) -> None:
-    dag = dagbag.dags["dlt_pipeline"]
-    assert dag.default_args.get("retries", 0) >= 1
+def test_all_dags_have_retries(dagbag: DagBag) -> None:
+    for dag_id, dag in dagbag.dags.items():
+        retries = (dag.default_args or {}).get("retries", 0)
+        assert retries >= 1, f"DAG {dag_id} has retries={retries}"
+
+
+def test_template_scheduled_dag_is_paused_by_default(dagbag: DagBag) -> None:
+    """The example_scheduled.py template must NOT auto-fire on clone — it
+    points at the shipped config and would trigger loads against whoever's
+    secrets.yaml is in the container."""
+    if "example_dlt_stackoverflow_hourly" not in dagbag.dag_ids:
+        return  # the file may have been removed; that's fine
+    dag = dagbag.dags["example_dlt_stackoverflow_hourly"]
+    assert dag.is_paused_upon_creation is True, (
+        "template scheduled DAG must set is_paused_upon_creation=True"
+    )
 
 
 # ---------------------------------------------------------------------------
