@@ -36,7 +36,7 @@ airflow-dlt/
 ├── dags/dlt_pipeline.py            # DAG factory — one DAG per YAML
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
-│   ├── secrets.py                  # SecretsClient interface
+│   ├── secrets_client.py           # SecretsClient interface (NOT secrets.py — shadows stdlib)
 │   ├── secrets_mock.py             # MockDelineaClient (YAML-backed)
 │   ├── dlt_pipeline.py             # build_pipeline(cfg, secrets) → (pipeline, source)
 │   └── schema_naming.py            # Target dataset name derivation

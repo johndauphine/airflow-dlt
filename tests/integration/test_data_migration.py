@@ -16,7 +16,7 @@ pytest.importorskip("dlt")
 from airflow_dlt.config import PipelineConfig
 from airflow_dlt.dlt_pipeline import build_pipeline
 from airflow_dlt.schema_naming import derive_dataset_name
-from airflow_dlt.secrets import SecretsClient
+from airflow_dlt.secrets_client import SecretsClient
 
 pytestmark = pytest.mark.integration
 

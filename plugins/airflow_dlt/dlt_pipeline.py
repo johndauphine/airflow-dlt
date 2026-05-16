@@ -16,7 +16,7 @@ from sqlalchemy.engine.url import URL
 
 from airflow_dlt.config import PipelineConfig, TableOverride
 from airflow_dlt.schema_naming import derive_dataset_name
-from airflow_dlt.secrets import SecretsClient
+from airflow_dlt.secrets_client import SecretsClient
 
 
 def _build_mssql_url(cfg: PipelineConfig, creds: dict[str, str]) -> URL:
@@ -74,8 +74,10 @@ def build_pipeline(cfg: PipelineConfig, secrets: SecretsClient) -> tuple[Any, An
     source_url = _build_mssql_url(cfg, secrets.get(cfg.source.secret_id))
     target_creds = _build_postgres_credentials(cfg, secrets.get(cfg.target.secret_id))
 
+    # dlt's sql_database wants a connection-string str, not a SQLAlchemy URL
+    # object. Render with the password visible so dlt can parse it.
     source = sql_database(
-        credentials=source_url,
+        credentials=source_url.render_as_string(hide_password=False),
         schema=cfg.source.schema_,
         table_names=cfg.tables.include,
         chunk_size=cfg.load.chunk_size,

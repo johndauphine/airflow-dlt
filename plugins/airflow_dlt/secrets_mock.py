@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from airflow_dlt.secrets import SecretLookupError, SecretsClient
+from airflow_dlt.secrets_client import SecretLookupError, SecretsClient
 
 
 class MockDelineaClient(SecretsClient):

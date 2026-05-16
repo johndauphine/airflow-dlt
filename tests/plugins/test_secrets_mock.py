@@ -1,6 +1,6 @@
 import pytest
 
-from airflow_dlt.secrets import SecretLookupError
+from airflow_dlt.secrets_client import SecretLookupError
 from airflow_dlt.secrets_mock import MockDelineaClient
 
 
