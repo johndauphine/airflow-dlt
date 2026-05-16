@@ -3,12 +3,13 @@
 YAML-driven MSSQL → Postgres pipelines using [Apache Airflow](https://airflow.apache.org/)
 and [dlt](https://dlthub.com/).
 
-A single Airflow DAG (`dlt_pipeline`) reads a YAML file describing one
-pipeline — source endpoint, target endpoint, table list, write semantics — and
-runs the load via dlt. Credentials are resolved through a `SecretsClient`
-interface; a `MockDelineaClient` (local YAML file) ships out of the box, and a
-real Delinea integration can drop in behind the same interface without
-touching any pipeline code.
+Drop a YAML file into `config/pipelines/`, and an Airflow DAG appears for it
+on the next reparse. Each YAML defines one pipeline — source endpoint, target
+endpoint, table list, write semantics — and the DAG runs the load via dlt.
+Credentials are resolved through a `SecretsClient` interface; a
+`MockDelineaClient` (local YAML file) ships out of the box, and a real
+Delinea integration can drop in behind the same interface without touching
+any pipeline code.
 
 ## Quick start
 
@@ -17,18 +18,22 @@ touching any pipeline code.
 cp config/secrets.yaml.example config/secrets.yaml
 
 # 2. Bring up Airflow + MSSQL + Postgres
+#    (mssql-init seeds an empty StackOverflow2010 DB matching the example YAML)
 docker compose up -d --build
 
-# 3. Trigger the example pipeline from the Airflow UI (http://localhost:8080)
-#    DAG: dlt_pipeline
-#    Conf: {"config_name": "stackoverflow"}
+# 3. Open Airflow at http://localhost:8080 (airflow / airflow)
+#    Trigger the dag: dlt_stackoverflow_mssql_to_postgres
 ```
+
+The example pipeline loads zero rows out of the box (the seed creates empty
+tables). Replace `mssql-init/seed.sql` (or restore the real StackOverflow
+backup separately) to exercise the pipeline with real data.
 
 ## Repo layout
 
 ```
 airflow-dlt/
-├── dags/dlt_pipeline.py            # The (single) parameterized DAG
+├── dags/dlt_pipeline.py            # DAG factory — one DAG per YAML
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
 │   ├── secrets.py                  # SecretsClient interface
@@ -39,8 +44,9 @@ airflow-dlt/
 │   ├── pipelines/stackoverflow.yaml   # Example pipeline definition
 │   ├── secrets.yaml.example           # Template (committed)
 │   └── secrets.yaml                   # Real secrets (gitignored)
+├── mssql-init/seed.sql             # One-shot seed for the example
 ├── tests/                          # Unit tests for plugins + DAG integrity
-├── docker-compose.yml              # Airflow + MSSQL + Postgres
+├── docker-compose.yml              # Airflow + MSSQL + mssql-init + Postgres
 ├── Dockerfile                      # Airflow image with ODBC 18 + dlt
 └── pyproject.toml
 ```
@@ -49,8 +55,9 @@ airflow-dlt/
 
 ```yaml
 pipeline:
-  name: stackoverflow_mssql_to_postgres   # also the dlt pipeline_name (load-bearing)
+  name: stackoverflow_mssql_to_postgres   # also the dlt pipeline_name & dag_id suffix
   schedule: null                          # cron string or null
+  max_active_runs: 1
   retries: 3
   retry_delay_seconds: 30
 
@@ -87,16 +94,8 @@ load:
   chunk_size: 100000
 ```
 
-Add more pipelines by dropping additional YAML files into
-`config/pipelines/` and triggering the DAG with the matching `config_name`.
-
-## Triggering
-
-```json
-{"config_name": "stackoverflow"}
-```
-
-The DAG looks up `config/pipelines/<config_name>.yaml`.
+Adding another pipeline is just another file under `config/pipelines/`. Its
+DAG ID will be `dlt_<pipeline.name>`.
 
 ## Credentials
 
@@ -124,5 +123,5 @@ template. The custom extract/load/state machinery in that repo
 (`data_transfer.py`, `schema_extractor.py`, `ddl_generator.py`,
 `type_mapping.py`, `binary_copy.py`, `incremental_state.py`) is all replaced
 by dlt's `sql_database` source + `postgres` destination. What remains here is
-roughly 200 lines of glue: config loading, secrets resolution, dataset
-naming, and a 30-line DAG.
+~250 lines of glue: config loading, secrets resolution, dataset naming, and a
+small DAG factory.

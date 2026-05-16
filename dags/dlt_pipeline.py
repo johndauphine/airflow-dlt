@@ -1,12 +1,13 @@
-"""Single parameterized DAG that runs a dlt pipeline defined by a YAML file.
+"""DAG factory: one Airflow DAG per pipeline YAML under config/pipelines/.
 
-Trigger the DAG with a config name in DAG run params, e.g.::
+At parse time we walk ``CONFIG_DIR`` and register one DAG per ``*.yaml``
+file. The DAG's ``dag_id``, ``schedule``, ``retries``, ``retry_delay``, and
+``max_active_runs`` all come from the YAML — editing those YAML fields
+changes Airflow behavior on the next DAG reparse.
 
-    {"config_name": "stackoverflow"}
-
-The DAG resolves ``/opt/airflow/config/pipelines/<config_name>.yaml`` and runs
-the dlt pipeline it describes. All connection details (source MSSQL + target
-Postgres) come from the YAML; credentials come from the (mock) Delinea client.
+YAML files that fail to parse register a *broken* DAG whose only task fails
+loudly with the parse error. This is preferred over swallowing the error
+(silent missing DAGs are operationally invisible).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from airflow.decorators import dag, task
 
-from airflow_dlt.config import load_config
+from airflow_dlt.config import PipelineConfig, load_config
 from airflow_dlt.dlt_pipeline import build_pipeline
 from airflow_dlt.secrets_mock import MockDelineaClient
 
@@ -28,60 +29,92 @@ CONFIG_DIR = Path(os.environ.get("PIPELINE_CONFIG_DIR", "/opt/airflow/config/pip
 SECRETS_FILE = Path(os.environ.get("PIPELINE_SECRETS_FILE", "/opt/airflow/config/secrets.yaml"))
 
 
-def _resolve_config_path(config_name: str) -> Path:
-    """Map a config_name DAG param to a YAML file path, with traversal guard."""
-    if not config_name or "/" in config_name or ".." in config_name:
-        raise ValueError(f"invalid config_name: {config_name!r}")
-    path = CONFIG_DIR / f"{config_name}.yaml"
-    if not path.is_file():
-        available = sorted(p.stem for p in CONFIG_DIR.glob("*.yaml"))
-        raise FileNotFoundError(
-            f"config {config_name!r} not found at {path}. available: {available}"
-        )
-    return path
+def _make_dag(yaml_path: Path, cfg: PipelineConfig):
+    @dag(
+        dag_id=f"dlt_{cfg.pipeline.name}",
+        description=f"dlt MSSQL→Postgres pipeline defined by {yaml_path.name}",
+        start_date=datetime(2026, 1, 1),
+        schedule=cfg.pipeline.schedule,
+        catchup=False,
+        max_active_runs=cfg.pipeline.max_active_runs,
+        default_args={
+            "owner": "data-team",
+            "retries": cfg.pipeline.retries,
+            "retry_delay": timedelta(seconds=cfg.pipeline.retry_delay_seconds),
+        },
+        tags=["dlt", cfg.source.type, cfg.target.type],
+    )
+    def _pipeline_dag():
+        @task
+        def run() -> dict:
+            # Re-read config at task runtime so YAML edits take effect on the
+            # next DAG run without requiring a scheduler reparse.
+            runtime_cfg = load_config(yaml_path)
+            secrets = MockDelineaClient(SECRETS_FILE)
+            pipeline, source = build_pipeline(runtime_cfg, secrets)
+
+            log.info(
+                "Running dlt pipeline %s → dataset %s (%d tables)",
+                pipeline.pipeline_name,
+                pipeline.dataset_name,
+                len(runtime_cfg.tables.include),
+            )
+            load_info = pipeline.run(source)
+            log.info("Load complete: %s", load_info)
+            return {
+                "pipeline": pipeline.pipeline_name,
+                "dataset": pipeline.dataset_name,
+                "loads_ids": list(load_info.loads_ids),
+            }
+
+        run()
+
+    return _pipeline_dag()
 
 
-@dag(
-    dag_id="dlt_pipeline",
-    description="Run a dlt MSSQL→Postgres pipeline defined by a YAML config file.",
-    start_date=datetime(2026, 1, 1),
-    schedule=None,
-    catchup=False,
-    max_active_runs=4,
-    default_args={
-        "owner": "data-team",
-        "retries": 2,
-        "retry_delay": timedelta(seconds=30),
-    },
-    params={"config_name": "stackoverflow"},
-    tags=["dlt", "mssql", "postgres"],
-)
-def dlt_pipeline_dag():
-    @task
-    def run(params: dict) -> dict:
-        config_name = params["config_name"]
-        config_path = _resolve_config_path(config_name)
-        log.info("Loading pipeline config from %s", config_path)
+def _make_broken_dag(yaml_path: Path, error: Exception):
+    """Register a DAG whose only task re-raises the YAML parse error.
 
-        cfg = load_config(config_path)
-        secrets = MockDelineaClient(SECRETS_FILE)
-        pipeline, source = build_pipeline(cfg, secrets)
+    Better than silently skipping the file: operators see a failing DAG in
+    Airflow rather than a missing one.
+    """
+    dag_id = f"dlt_broken__{yaml_path.stem}"
 
-        log.info(
-            "Running dlt pipeline %s → dataset %s (%d tables)",
-            pipeline.pipeline_name,
-            pipeline.dataset_name,
-            len(cfg.tables.include),
-        )
-        load_info = pipeline.run(source)
-        log.info("Load complete: %s", load_info)
-        return {
-            "pipeline": pipeline.pipeline_name,
-            "dataset": pipeline.dataset_name,
-            "loads_ids": list(load_info.loads_ids),
-        }
+    @dag(
+        dag_id=dag_id,
+        description=f"BROKEN pipeline config {yaml_path.name}: {error!r}",
+        start_date=datetime(2026, 1, 1),
+        schedule=None,
+        catchup=False,
+        default_args={"owner": "data-team", "retries": 0},
+        tags=["dlt", "broken-config"],
+    )
+    def _broken_dag():
+        @task
+        def fail() -> None:
+            raise RuntimeError(
+                f"Pipeline config {yaml_path} failed to parse: {error!r}"
+            )
 
-    run()
+        fail()
+
+    return _broken_dag()
 
 
-dlt_pipeline_dag()
+def _register_all() -> None:
+    if not CONFIG_DIR.is_dir():
+        log.warning("CONFIG_DIR %s does not exist; no pipeline DAGs registered", CONFIG_DIR)
+        return
+    for yaml_path in sorted(CONFIG_DIR.glob("*.yaml")):
+        try:
+            cfg = load_config(yaml_path)
+        except Exception as exc:  # noqa: BLE001 - we want any parse error
+            log.error("Failed to parse %s: %r", yaml_path, exc)
+            broken = _make_broken_dag(yaml_path, exc)
+            globals()[broken.dag_id] = broken
+            continue
+        d = _make_dag(yaml_path, cfg)
+        globals()[d.dag_id] = d
+
+
+_register_all()

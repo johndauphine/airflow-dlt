@@ -133,8 +133,8 @@ services:
     command:
       - -c
       - |
-        mkdir -p /sources/logs /sources/dags /sources/plugins
-        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /opt/airflow/.dlt
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins} /opt/airflow/.dlt
         /entrypoint airflow db migrate
         /entrypoint airflow users create \
           --username $${_AIRFLOW_WWW_USER_USERNAME:-airflow} \
@@ -151,8 +151,12 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     user: "0:0"
+    # YAML merge does not combine list-typed keys, so the airflow-common
+    # volumes are replaced here. The dlt-state volume is mounted so we can
+    # chown it for UID 50000 before the worker services start.
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}:/sources
+      - dlt-state:/opt/airflow/.dlt
 
   mssql-server:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -176,6 +180,30 @@ services:
       retries: 10
       start_period: 60s
     restart: unless-stopped
+
+  # One-shot: create StackOverflow2010 + empty example tables in the source
+  # MSSQL so the example pipeline has a target to reflect against. Replace
+  # mssql-init/seed.sql (or restore a real .bak) for actual data.
+  mssql-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-init
+    user: "0:0"
+    depends_on:
+      mssql-server:
+        condition: service_healthy
+    environment:
+      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD:-YourStrong@Passw0rd}
+    volumes:
+      - ./mssql-init:/seed:ro
+    networks:
+      - airflow
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/mssql-tools18/bin/sqlcmd
+        -S mssql-server -U sa -P "$${MSSQL_SA_PASSWORD}"
+        -i /seed/seed.sql -C
+    restart: "no"
 
   postgres-target:
     image: postgres:16-alpine

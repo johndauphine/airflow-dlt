@@ -6,9 +6,12 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
 
 ## Architecture
 
-- **One DAG**, `dags/dlt_pipeline.py`. It accepts a `config_name` DAG run
-  param, resolves to `config/pipelines/<config_name>.yaml`, and runs the dlt
-  pipeline that the YAML describes. There is intentionally not a DAG per YAML.
+- **DAG factory**, `dags/dlt_pipeline.py`. At parse time it walks
+  `config/pipelines/*.yaml` and registers one DAG per file. The DAG's
+  `dag_id`, `schedule`, `retries`, `retry_delay`, and `max_active_runs` all
+  come from the YAML. A YAML that fails to parse registers a *broken* DAG
+  (named `dlt_broken__<filename>`) whose only task fails loudly with the
+  parse error — silent missing DAGs are operationally invisible.
 - **Pipeline config** is a Pydantic model in `plugins/airflow_dlt/config.py`.
   Extra keys are rejected (`extra="forbid"`); edits to the schema should add
   fields explicitly.
@@ -19,16 +22,18 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
 - **Dataset naming**: dlt's `dataset_name` doubles as the Postgres schema. We
   derive `{alias}__{source_db}__{source_schema}` to match the template's
   hostname-alias pattern. Don't rename `pipeline.name` casually — dlt state
-  is keyed on it.
+  is keyed on it, and so is the DAG ID.
 
 ## When editing
 
-- The DAG must keep `config_name` as a DAG run param.
 - Don't add ENV-based config fallbacks; the move away from `.env` is deliberate.
 - Per-table `overrides` go through `_apply_table_overrides` — if you add a new
   override field in `TableOverride`, update that function too.
 - `_build_mssql_url` / `_build_postgres_credentials` are pure helpers and
-  unit-tested. Keep them pure.
+  unit-tested. Keep them pure. Use `urllib.parse.quote(safe="")` for URL
+  userinfo — never `quote_plus` (SQLAlchemy URL parsing reads `+` as literal).
+- If you add a new YAML field to `PipelineMeta` that should affect Airflow,
+  wire it through `_make_dag` in `dags/dlt_pipeline.py` — otherwise it's inert.
 
 ## Running tests
 

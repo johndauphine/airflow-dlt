@@ -68,4 +68,14 @@ def test_postgres_credentials_url_encodes_special_chars():
     creds = _build_postgres_credentials(
         _cfg(), {"username": "post gres", "password": "p@ss/word"}
     )
-    assert creds == "postgresql://post+gres:p%40ss%2Fword@pg-host:5432/warehouse"
+    # RFC 3986 percent-encoding: space → %20 (not +), since SQLAlchemy URL
+    # parsing treats + in userinfo as a literal '+', not a decoded space.
+    assert creds == "postgresql://post%20gres:p%40ss%2Fword@pg-host:5432/warehouse"
+
+
+def test_postgres_credentials_plus_sign_preserved():
+    """A literal '+' in the password must round-trip as '%2B', not '+'."""
+    creds = _build_postgres_credentials(
+        _cfg(), {"username": "u", "password": "a+b"}
+    )
+    assert creds == "postgresql://u:a%2Bb@pg-host:5432/warehouse"

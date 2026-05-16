@@ -8,7 +8,7 @@ returns a ready-to-run ``(pipeline, source)`` pair; the caller invokes
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 import dlt
 from dlt.sources.sql_database import sql_database
@@ -34,9 +34,15 @@ def _build_mssql_url(cfg: PipelineConfig, creds: dict[str, str]) -> URL:
 
 
 def _build_postgres_credentials(cfg: PipelineConfig, creds: dict[str, str]) -> str:
-    """Postgres credentials string accepted by ``dlt.destinations.postgres``."""
-    user = quote_plus(creds["username"])
-    pw = quote_plus(creds["password"])
+    """Postgres credentials string accepted by ``dlt.destinations.postgres``.
+
+    Uses RFC 3986 percent-encoding (``quote``) rather than form-encoding
+    (``quote_plus``): SQLAlchemy parses URL userinfo per RFC 3986, where a
+    literal ``+`` is *not* a decoded space, so ``quote_plus`` would silently
+    corrupt credentials containing spaces.
+    """
+    user = quote(creds["username"], safe="")
+    pw = quote(creds["password"], safe="")
     return f"postgresql://{user}:{pw}@{cfg.target.host}:{cfg.target.port}/{cfg.target.database}"
 
 
