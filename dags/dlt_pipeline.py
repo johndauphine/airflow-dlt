@@ -59,13 +59,19 @@ def _resolve_config_path(config_name: str) -> Path:
 )
 def dlt_pipeline_dag():
     @task
-    def run(params: dict) -> dict:
+    def run() -> dict:
         # Lazy import: dlt pulls pyarrow at module load; keeping it out of the
         # DAG file's top-level imports avoids a numpy/pyarrow Cython init-order
         # bug under DagBag's parse subprocess (see the secrets_client rename
         # commit for context).
+        from airflow.sdk import get_current_context
+
         from airflow_dlt.dlt_pipeline import build_pipeline
 
+        # Fetch DAG run params explicitly rather than relying on Airflow's
+        # @task auto-injection of `params: dict` — both work, but the
+        # explicit form is unambiguous to humans and to static analyzers.
+        params = get_current_context()["params"]
         config_name = params["config_name"]
         config_path = _resolve_config_path(config_name)
         log.info("Loading pipeline config from %s", config_path)
