@@ -1,11 +1,14 @@
 # airflow-dlt
 
-YAML-driven MSSQL → Postgres pipelines using [Apache Airflow](https://airflow.apache.org/)
-and [dlt](https://dlthub.com/).
+YAML-driven data pipelines on [Apache Airflow](https://airflow.apache.org/)
++ [dlt](https://dlthub.com/).
 
-Drop a YAML file into `config/pipelines/`, and an Airflow DAG appears for it
-on the next reparse. Each YAML defines one pipeline — source endpoint, target
-endpoint, table list, write semantics — and the DAG runs the load via dlt.
+One Airflow DAG (`dlt_pipeline`) runs every pipeline in this repo. Each YAML
+file in `config/pipelines/` defines one pipeline — source endpoint, target
+endpoint, table list, write semantics. Trigger the DAG with
+`{"config_name": "<yaml stem>"}` to pick which one to run; scheduling and
+retries are properties of the DAG itself, not of individual YAMLs.
+
 Credentials are resolved through a `SecretsClient` interface; a
 `MockDelineaClient` (local YAML file) ships out of the box, and a real
 Delinea integration can drop in behind the same interface without touching
@@ -22,7 +25,7 @@ cp config/secrets.yaml.example config/secrets.yaml
 docker compose up -d --build
 
 # 3. Open Airflow at http://localhost:8080 (airflow / airflow)
-#    Trigger the dag: dlt_stackoverflow_mssql_to_postgres
+#    Trigger the `dlt_pipeline` DAG with: {"config_name": "stackoverflow"}
 ```
 
 The example pipeline loads zero rows out of the box (the seed creates empty
@@ -33,7 +36,7 @@ backup separately) to exercise the pipeline with real data.
 
 ```
 airflow-dlt/
-├── dags/dlt_pipeline.py            # DAG factory — one DAG per YAML
+├── dags/dlt_pipeline.py            # Single parameterized DAG (picks YAML via config_name)
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
 │   ├── connectors.py               # Source/Target connectors + registries
@@ -56,11 +59,7 @@ airflow-dlt/
 
 ```yaml
 pipeline:
-  name: stackoverflow_mssql_to_postgres   # also the dlt pipeline_name & dag_id suffix
-  schedule: null                          # cron string or null
-  max_active_runs: 1
-  retries: 3
-  retry_delay_seconds: 30
+  name: stackoverflow_mssql_to_postgres   # the dlt pipeline_name (state key) + log label
 
 source:
   type: mssql
@@ -95,8 +94,8 @@ load:
   chunk_size: 100000
 ```
 
-Adding another pipeline is just another file under `config/pipelines/`. Its
-DAG ID will be `dlt_<pipeline.name>`.
+Adding another pipeline is just another file under `config/pipelines/`. To
+run it, trigger the `dlt_pipeline` DAG with `{"config_name": "<yaml stem>"}`.
 
 ### Supported endpoint types
 
