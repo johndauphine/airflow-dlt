@@ -44,6 +44,13 @@ def _make_dag(yaml_path: Path, cfg: PipelineConfig):
             "retry_delay": timedelta(seconds=cfg.pipeline.retry_delay_seconds),
         },
         tags=["dlt", cfg.source.type, cfg.target.type],
+        # We bag DAGs explicitly via globals() in _register_all. Without
+        # auto_register=False, the @dag decorator adds every constructed
+        # DAG to DagContext.autoregistered_dags — including ones that
+        # fail post-construction validation. DagBag merges that set with
+        # module globals, so invalid DAGs would leak back into import
+        # errors even after we exclude them from `registered`.
+        auto_register=False,
     )
     def _pipeline_dag():
         @task
@@ -89,6 +96,7 @@ def _make_broken_dag(yaml_path: Path, error: Exception):
         catchup=False,
         default_args={"owner": "data-team", "retries": 0},
         tags=["dlt", "broken-config"],
+        auto_register=False,  # see _make_dag for rationale
     )
     def _broken_dag():
         @task

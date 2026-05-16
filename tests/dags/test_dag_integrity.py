@@ -133,3 +133,23 @@ def test_duplicate_pipeline_name_yields_broken_dag(tmp_path):
     assert "dlt_dup_name" in registered
     # Second one registers as broken so the conflict is visible.
     assert "dlt_broken__b" in registered
+
+
+def test_factory_does_not_leak_dags_via_auto_register(tmp_path):
+    """Invalid configs must not leak into DagContext.autoregistered_dags.
+
+    Otherwise DagBag's auto-register sweep would pick up the invalid DAG
+    and reintroduce the import error this factory exists to prevent.
+    """
+    from airflow.sdk.definitions._internal.contextmanager import DagContext
+
+    (tmp_path / "good.yaml").write_text(_yaml("good_three"))
+    (tmp_path / "bad_cron.yaml").write_text(
+        _yaml("bad_cron_two", schedule="this is not a cron")
+    )
+    register_all = _load_register_all()
+
+    DagContext.autoregistered_dags.clear()
+    register_all(tmp_path)
+    leaked = {d.dag_id for d, _mod in DagContext.autoregistered_dags}
+    assert leaked == set(), f"DAGs leaked via auto-register: {leaked}"
