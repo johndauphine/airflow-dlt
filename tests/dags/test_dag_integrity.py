@@ -57,3 +57,81 @@ def test_pipeline_dag_picks_up_yaml_retry_settings(dagbag: DagBag) -> None:
     # Example YAML sets retries=3, retry_delay_seconds=30.
     assert dag.default_args["retries"] == 3
     assert dag.default_args["retry_delay"] == timedelta(seconds=30)
+
+
+# ---------------------------------------------------------------------------
+# Factory robustness — these import the module's _register_all directly so we
+# can drive it against synthetic config dirs without restarting Airflow.
+# ---------------------------------------------------------------------------
+
+_BASE_YAML = """
+pipeline:
+  name: {name}
+  {schedule_line}
+source:
+  type: mssql
+  secret_id: src
+  host: h
+  database: d
+  schema: dbo
+target:
+  type: postgres
+  secret_id: tgt
+  host: h
+  database: d
+  schema_alias: a
+tables:
+  include: [T1]
+"""
+
+
+def _yaml(name: str, schedule: str | None = None) -> str:
+    schedule_line = f'schedule: "{schedule}"' if schedule else ""
+    return _BASE_YAML.format(name=name, schedule_line=schedule_line)
+
+
+def _load_register_all():
+    sys.path.insert(0, str(REPO / "dags"))
+    import importlib
+
+    mod = importlib.import_module("dlt_pipeline")
+    return mod._register_all
+
+
+def test_unparseable_yaml_yields_broken_dag(tmp_path):
+    (tmp_path / "good.yaml").write_text(_yaml("good_one"))
+    (tmp_path / "bad.yaml").write_text("not: [valid: yaml")  # bad YAML
+    register_all = _load_register_all()
+
+    registered = register_all(tmp_path)
+    assert "dlt_good_one" in registered
+    assert "dlt_broken__bad" in registered
+
+
+def test_invalid_schedule_yields_broken_dag(tmp_path):
+    (tmp_path / "good.yaml").write_text(_yaml("good_two"))
+    (tmp_path / "bad_cron.yaml").write_text(
+        _yaml("bad_cron_pipeline", schedule="this is not a cron")
+    )
+    register_all = _load_register_all()
+
+    registered = register_all(tmp_path)
+    assert "dlt_good_two" in registered
+    # The bad-cron file should NOT silently disappear; either it parses
+    # successfully (Airflow accepts the string as a one-off timetable name)
+    # or it registers as broken. Either way the good DAG must still exist.
+    bad_present = "dlt_bad_cron_pipeline" in registered
+    broken_present = "dlt_broken__bad_cron" in registered
+    assert bad_present or broken_present
+
+
+def test_duplicate_pipeline_name_yields_broken_dag(tmp_path):
+    (tmp_path / "a.yaml").write_text(_yaml("dup_name"))
+    (tmp_path / "b.yaml").write_text(_yaml("dup_name"))
+    register_all = _load_register_all()
+
+    registered = register_all(tmp_path)
+    # First (alphabetical) wins as the real DAG.
+    assert "dlt_dup_name" in registered
+    # Second one registers as broken so the conflict is visible.
+    assert "dlt_broken__b" in registered

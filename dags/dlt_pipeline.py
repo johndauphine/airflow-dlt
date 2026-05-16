@@ -101,20 +101,48 @@ def _make_broken_dag(yaml_path: Path, error: Exception):
     return _broken_dag()
 
 
-def _register_all() -> None:
-    if not CONFIG_DIR.is_dir():
-        log.warning("CONFIG_DIR %s does not exist; no pipeline DAGs registered", CONFIG_DIR)
-        return
-    for yaml_path in sorted(CONFIG_DIR.glob("*.yaml")):
+def _register_all(config_dir: Path | None = None) -> dict[str, Any]:
+    """Walk ``config_dir`` and return ``{dag_id: dag_object}``.
+
+    Side-effect free so tests can call this directly. The module-level
+    code below merges the return value into ``globals()`` so Airflow's
+    DAG processor picks them up.
+
+    Any failure to register a single file — YAML parse error, invalid
+    cron, malformed DAG ID, or a duplicate ``pipeline.name`` — becomes a
+    ``dlt_broken__<filename>`` DAG instead of a module-level import
+    error that would hide every other DAG in the directory.
+    """
+    config_dir = config_dir or CONFIG_DIR
+    registered: dict[str, Any] = {}
+    if not config_dir.is_dir():
+        log.warning("CONFIG_DIR %s does not exist; no pipeline DAGs registered", config_dir)
+        return registered
+
+    seen_dag_ids: dict[str, Path] = {}
+
+    for yaml_path in sorted(config_dir.glob("*.yaml")):
         try:
             cfg = load_config(yaml_path)
-        except Exception as exc:  # noqa: BLE001 - we want any parse error
-            log.error("Failed to parse %s: %r", yaml_path, exc)
+            dag_id = f"dlt_{cfg.pipeline.name}"
+            if dag_id in seen_dag_ids:
+                raise ValueError(
+                    f"duplicate dag_id {dag_id!r}: also produced by "
+                    f"{seen_dag_ids[dag_id]}. Two YAMLs share pipeline.name "
+                    f"{cfg.pipeline.name!r}."
+                )
+            d = _make_dag(yaml_path, cfg)
+        except Exception as exc:  # noqa: BLE001 - surface any failure as a broken DAG
+            log.error("Failed to register pipeline from %s: %r", yaml_path, exc)
             broken = _make_broken_dag(yaml_path, exc)
-            globals()[broken.dag_id] = broken
+            registered[broken.dag_id] = broken
             continue
-        d = _make_dag(yaml_path, cfg)
-        globals()[d.dag_id] = d
+
+        seen_dag_ids[dag_id] = yaml_path
+        registered[d.dag_id] = d
+
+    return registered
 
 
-_register_all()
+for _dag_id, _dag in _register_all().items():
+    globals()[_dag_id] = _dag

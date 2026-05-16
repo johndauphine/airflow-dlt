@@ -1,5 +1,6 @@
 # Example pipeline: replicate StackOverflow2010 tables from MSSQL to Postgres.
-# Trigger the dag with: {"config_name": "stackoverflow"}
+# Registers as Airflow dag: dlt_stackoverflow_mssql_to_postgres
+# (dag_id is derived as "dlt_<pipeline.name>")
 
 pipeline:
   name: stackoverflow_mssql_to_postgres
