@@ -20,8 +20,12 @@ from typing import Any
 
 from airflow.decorators import dag, task
 
+# NOTE: build_pipeline imports dlt → pyarrow → numpy, which under DagBag's
+# parse subprocess can trip a pyarrow/numpy Cython init-order ImportError
+# ("cannot import name randbits"). The same import works fine at task
+# runtime. Lazy-import build_pipeline inside the @task body so DAG parsing
+# stays lightweight and immune to that issue.
 from airflow_dlt.config import PipelineConfig, load_config
-from airflow_dlt.dlt_pipeline import build_pipeline
 from airflow_dlt.secrets_mock import MockDelineaClient
 
 log = logging.getLogger(__name__)
@@ -55,6 +59,11 @@ def _make_dag(yaml_path: Path, cfg: PipelineConfig):
     def _pipeline_dag():
         @task
         def run() -> dict:
+            # Lazy import: dlt pulls pyarrow at module load. Keeping it out of
+            # the DAG file's top-level import block keeps parse fast and
+            # avoids a numpy/pyarrow Cython init-order bug under DagBag.
+            from airflow_dlt.dlt_pipeline import build_pipeline
+
             # Re-read config at task runtime so YAML edits take effect on the
             # next DAG run without requiring a scheduler reparse.
             runtime_cfg = load_config(yaml_path)
