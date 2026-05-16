@@ -1,0 +1,28 @@
+[project]
+name = "airflow-dlt"
+version = "0.1.0"
+description = "YAML-driven MSSQL→Postgres pipelines with Apache Airflow and dlt"
+requires-python = ">=3.11,<3.13"
+
+dependencies = [
+    "apache-airflow==3.0.0",
+    "apache-airflow-providers-postgres>=5.12.0",
+    "dlt[postgres,sql_database]>=1.5.0",
+    "pyodbc>=5.0.0",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["plugins"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
