@@ -34,10 +34,15 @@ def _apply_table_overrides(source: Any, overrides: dict[str, TableOverride]) -> 
         if override.write_disposition is not None:
             hints["write_disposition"] = override.write_disposition
         if override.incremental is not None:
-            hints["incremental"] = dlt.sources.incremental(
-                cursor_path=override.incremental.cursor_path,
-                initial_value=override.incremental.initial_value,
-            )
+            incremental_kwargs: dict[str, Any] = {
+                "cursor_path": override.incremental.cursor_path,
+                "initial_value": override.incremental.initial_value,
+            }
+            if override.incremental.range_start is not None:
+                incremental_kwargs["range_start"] = override.incremental.range_start
+            if override.incremental.row_order is not None:
+                incremental_kwargs["row_order"] = override.incremental.row_order
+            hints["incremental"] = dlt.sources.incremental(**incremental_kwargs)
         if hints:
             resource.apply_hints(**hints)
 

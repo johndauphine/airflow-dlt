@@ -1,0 +1,42 @@
+﻿# Local benchmark: upsert one StackOverflow2013 table through Airflow + dlt with incremental extraction.
+pipeline:
+  name: stackoverflow2013_users_upsert_incremental_bench
+
+source:
+  type: mssql
+  secret_id: source_mssql_stackoverflow
+  host: mssql-bench
+  port: 1433
+  database: StackOverflow2013
+  schema: dbo
+  driver: "ODBC Driver 18 for SQL Server"
+  options:
+    Encrypt: "yes"
+    TrustServerCertificate: "yes"
+
+target:
+  type: postgres
+  secret_id: target_postgres_main
+  host: pg-bench
+  port: 5432
+  database: so2013_dlt
+  schema_alias: dlt
+  sslmode: disable
+
+tables:
+  include:
+    - Users
+  overrides:
+    Users:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: LastAccessDate
+        range_start: open
+        row_order: asc
+
+load:
+  write_disposition: replace
+  chunk_size: 100000

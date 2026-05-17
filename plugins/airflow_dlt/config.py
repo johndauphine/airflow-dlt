@@ -112,13 +112,18 @@ TargetConfig = Annotated[
 # Per-table + load config (unchanged)
 # ---------------------------------------------------------------------------
 
+WriteDisposition = Literal["replace", "append", "merge"] | dict[str, Any]
+
+
 class IncrementalSpec(_Model):
     cursor_path: str
     initial_value: str | int | float | None = None
+    range_start: Literal["open", "closed"] | None = None
+    row_order: Literal["asc", "desc"] | None = None
 
 
 class TableOverride(_Model):
-    write_disposition: Literal["replace", "append", "merge"] | None = None
+    write_disposition: WriteDisposition | None = None
     primary_key: str | list[str] | None = None
     incremental: IncrementalSpec | None = None
 
@@ -136,7 +141,7 @@ class TablesConfig(_Model):
 
 
 class LoadConfig(_Model):
-    write_disposition: Literal["replace", "append", "merge"] = "replace"
+    write_disposition: WriteDisposition = "replace"
     chunk_size: int = 100_000
 
 
