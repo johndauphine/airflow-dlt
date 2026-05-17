@@ -6,6 +6,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
          curl \
          gnupg2 \
+         procps \
          unixodbc-dev \
          krb5-user \
          libkrb5-dev \

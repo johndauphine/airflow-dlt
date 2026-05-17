@@ -3,8 +3,11 @@ x-airflow-common:
   build: .
   environment:
     &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-metadata/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres-metadata/airflow
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: ${AIRFLOW__CELERY__WORKER_CONCURRENCY:-4}
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
@@ -23,7 +26,9 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
     AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: 5
 
-    # dlt writes its working state under here; persisted via the dlt-state volume.
+    # dlt writes working packages/state here. Use DLT_STATE_DIR=/large/path to
+    # bind-mount attached storage for large migrations; otherwise this uses the
+    # Docker-managed dlt-state volume below.
     DLT_DATA_DIR: /opt/airflow/.dlt
 
   volumes:
@@ -32,11 +37,13 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/tests:/opt/airflow/tests
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
-    - dlt-state:/opt/airflow/.dlt
+    - ${DLT_STATE_DIR:-dlt-state}:/opt/airflow/.dlt
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
     postgres-metadata:
+      condition: service_healthy
+    redis:
       condition: service_healthy
   networks:
     - airflow
@@ -45,6 +52,7 @@ services:
   postgres-metadata:
     image: postgres:16-alpine
     container_name: airflow-postgres
+    mem_limit: ${AIRFLOW_METADATA_DB_MEM_LIMIT:-1g}
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -60,10 +68,26 @@ services:
     networks:
       - airflow
 
+  redis:
+    image: redis:7-alpine
+    container_name: airflow-redis
+    command: redis-server --save "" --appendonly no
+    mem_limit: ${AIRFLOW_REDIS_MEM_LIMIT:-512m}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - airflow
+
   airflow-webserver:
     <<: *airflow-common
     container_name: airflow-webserver
     command: api-server
+    mem_limit: ${AIRFLOW_WEBSERVER_MEM_LIMIT:-2g}
     ports:
       - "8080:8080"
     healthcheck:
@@ -82,6 +106,7 @@ services:
     <<: *airflow-common
     container_name: airflow-scheduler
     command: scheduler
+    mem_limit: ${AIRFLOW_SCHEDULER_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
       interval: 30s
@@ -98,6 +123,7 @@ services:
     <<: *airflow-common
     container_name: airflow-triggerer
     command: triggerer
+    mem_limit: ${AIRFLOW_TRIGGERER_MEM_LIMIT:-1g}
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
       interval: 30s
@@ -114,6 +140,7 @@ services:
     <<: *airflow-common
     container_name: airflow-dag-processor
     command: dag-processor
+    mem_limit: ${AIRFLOW_DAG_PROCESSOR_MEM_LIMIT:-1g}
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
       interval: 30s
@@ -125,6 +152,31 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: airflow-worker
+    command: >
+      bash -c 'exec airflow celery worker --celery-hostname "celery@$${HOSTNAME}"
+      --concurrency "$${AIRFLOW__CELERY__WORKER_CONCURRENCY}"'
+    mem_limit: ${AIRFLOW_WORKER_MEM_LIMIT:-8g}
+    cpus: ${AIRFLOW_WORKER_CPUS:-4}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - airflow
+      - dmt-bench
 
   airflow-init:
     <<: *airflow-common
@@ -156,7 +208,7 @@ services:
     # chown it for UID 50000 before the worker services start.
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}:/sources
-      - dlt-state:/opt/airflow/.dlt
+      - ${DLT_STATE_DIR:-dlt-state}:/opt/airflow/.dlt
 
   mssql-server:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -239,3 +291,5 @@ volumes:
 networks:
   airflow:
     driver: bridge
+  dmt-bench:
+    external: true
