@@ -1,0 +1,136 @@
+# Example: incremental maintenance for StackOverflow2013 in
+# dlt_stackoverflow2013_dbo.
+#
+# Trigger the `dlt_pipeline` DAG with:
+#   {"config_name": "example_stackoverflow2013_incremental"}
+#
+# The first run establishes dlt-managed cursor state. Later runs read the
+# cursor high-water marks from dlt's state tables instead of from this file.
+pipeline:
+  name: example_stackoverflow2013_incremental
+
+source:
+  type: mssql
+  secret_id: source_mssql_stackoverflow
+  host: mssql-bench
+  port: 1433
+  database: StackOverflow2013
+  schema: dbo
+  driver: "ODBC Driver 18 for SQL Server"
+  options:
+    Encrypt: "yes"
+    TrustServerCertificate: "yes"
+
+target:
+  type: postgres
+  secret_id: target_postgres_main
+  host: pg-bench
+  port: 5432
+  database: so2013_dlt
+  schema_alias: dlt
+  sslmode: disable
+
+tables:
+  include:
+    - Badges
+    - Comments
+    - LinkTypes
+    - PostLinks
+    - Posts
+    - PostTypes
+    - Users
+    - Votes
+    - VoteTypes
+  overrides:
+    Badges:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: Date
+        range_start: open
+        row_order: asc
+    Comments:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: CreationDate
+        range_start: open
+        row_order: asc
+    LinkTypes:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: Id
+        range_start: open
+        row_order: asc
+    PostLinks:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: CreationDate
+        range_start: open
+        row_order: asc
+    Posts:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: LastActivityDate
+        range_start: open
+        row_order: asc
+    PostTypes:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: Id
+        range_start: open
+        row_order: asc
+    Users:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: LastAccessDate
+        range_start: open
+        row_order: asc
+    Votes:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: Id
+        range_start: open
+        row_order: asc
+    VoteTypes:
+      write_disposition:
+        disposition: merge
+        strategy: upsert
+      primary_key: Id
+      incremental:
+        cursor_path: Id
+        range_start: open
+        row_order: asc
+
+load:
+  write_disposition: replace
+  chunk_size: 100000
+
+dlt:
+  sql_backend: pyarrow
+  loader_file_format: parquet
+  data_writer_file_max_items: 100000
+  normalize_file_max_items: 100000
+  load_workers: 5

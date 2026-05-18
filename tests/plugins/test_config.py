@@ -278,3 +278,58 @@ def test_full_stackoverflow2013_benchmark_uses_parquet_adbc_loader():
     assert cfg.dlt.sql_backend == "pyarrow"
     assert cfg.dlt.loader_file_format == "parquet"
     assert cfg.dlt.load_workers == 5
+
+
+@pytest.mark.parametrize(
+    "config_name",
+    [
+        "stackoverflow2013_incremental_existing_bench",
+        "example_stackoverflow2013_incremental",
+    ],
+)
+def test_stackoverflow2013_incremental_configs_use_all_table_upserts(config_name):
+    cfg = load_config(
+        Path(__file__).parents[2]
+        / "config"
+        / "pipelines"
+        / f"{config_name}.yaml"
+    )
+
+    assert cfg.tables.include == [
+        "Badges",
+        "Comments",
+        "LinkTypes",
+        "PostLinks",
+        "Posts",
+        "PostTypes",
+        "Users",
+        "Votes",
+        "VoteTypes",
+    ]
+    assert set(cfg.tables.overrides) == set(cfg.tables.include)
+    assert cfg.dlt.sql_backend == "pyarrow"
+    assert cfg.dlt.loader_file_format == "parquet"
+
+    expected_cursors = {
+        "Badges": "Date",
+        "Comments": "CreationDate",
+        "LinkTypes": "Id",
+        "PostLinks": "CreationDate",
+        "Posts": "LastActivityDate",
+        "PostTypes": "Id",
+        "Users": "LastAccessDate",
+        "Votes": "Id",
+        "VoteTypes": "Id",
+    }
+    for table_name, cursor_path in expected_cursors.items():
+        override = cfg.tables.overrides[table_name]
+        assert override.primary_key == "Id"
+        assert override.write_disposition == {
+            "disposition": "merge",
+            "strategy": "upsert",
+        }
+        assert override.incremental is not None
+        assert override.incremental.cursor_path == cursor_path
+        assert override.incremental.initial_value is None
+        assert override.incremental.range_start == "open"
+        assert override.incremental.row_order == "asc"
