@@ -25,6 +25,10 @@ x-airflow-common:
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: ${AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG:-16}
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
     AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: 5
+    AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 10
+    DLT_DAG_PROCESSOR_MAX_PARSE_AGE_SECONDS: ${DLT_DAG_PROCESSOR_MAX_PARSE_AGE_SECONDS:-300}
+    DLT_DAG_PROCESSOR_STARTUP_GRACE_SECONDS: ${DLT_DAG_PROCESSOR_STARTUP_GRACE_SECONDS:-180}
+    DLT_DAG_PROCESSOR_WATCHDOG_INTERVAL: ${DLT_DAG_PROCESSOR_WATCHDOG_INTERVAL:-60}
 
     # dlt writes working packages/state here. Use DLT_STATE_DIR=/large/path to
     # bind-mount attached storage for large migrations; otherwise this uses the
@@ -139,14 +143,40 @@ services:
   airflow-dag-processor:
     <<: *airflow-common
     container_name: airflow-dag-processor
-    command: dag-processor
+    command: >
+      bash -c '
+        set -euo pipefail
+        airflow dag-processor &
+        pid="$$!"
+        terminate() {
+          kill -TERM "$$pid" 2>/dev/null || true
+          wait "$$pid" 2>/dev/null || true
+          exit 143
+        }
+        trap terminate TERM INT
+        sleep "$${DLT_DAG_PROCESSOR_STARTUP_GRACE_SECONDS}"
+        while kill -0 "$$pid" 2>/dev/null; do
+          if ! PYTHONPATH=/opt/airflow/plugins python -m airflow_dlt.healthcheck dag-processor-fresh --dag-id dlt_pipeline --max-age-seconds "$${DLT_DAG_PROCESSOR_MAX_PARSE_AGE_SECONDS}"; then
+            echo "dag processor freshness check failed; restarting container" >&2
+            kill -TERM "$$pid" 2>/dev/null || true
+            wait "$$pid" 2>/dev/null || true
+            exit 1
+          fi
+          sleep "$${DLT_DAG_PROCESSOR_WATCHDOG_INTERVAL}"
+        done
+        wait "$$pid"
+      '
     mem_limit: ${AIRFLOW_DAG_PROCESSOR_MEM_LIMIT:-1g}
     healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      test:
+        - CMD-SHELL
+        - >
+          airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}" &&
+          PYTHONPATH=/opt/airflow/plugins python -m airflow_dlt.healthcheck dag-processor-fresh --dag-id dlt_pipeline --max-age-seconds "$${DLT_DAG_PROCESSOR_MAX_PARSE_AGE_SECONDS}"
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: ${DLT_DAG_PROCESSOR_STARTUP_GRACE_SECONDS:-180}s
     restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on

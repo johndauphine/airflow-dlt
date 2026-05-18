@@ -12,6 +12,12 @@ ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
   not per-YAML. (We tried the DAG-factory pattern earlier in development;
   it created confusing per-YAML DAGs whose operational knobs lived in a
   different place from where you'd normally configure Airflow.)
+- **Local dag-processor watchdog** in `docker-compose.yml` checks the Airflow
+  metadata DB for fresh parses of `dlt_pipeline`. If this DAG ID changes,
+  update the watchdog command and healthcheck together. The custom knobs are
+  `DLT_DAG_PROCESSOR_MAX_PARSE_AGE_SECONDS`,
+  `DLT_DAG_PROCESSOR_STARTUP_GRACE_SECONDS`, and
+  `DLT_DAG_PROCESSOR_WATCHDOG_INTERVAL`.
 - **Pipeline config** is a Pydantic model in `plugins/airflow_dlt/config.py`.
   Extra keys are rejected (`extra="forbid"`). `source` and `target` are
   **discriminated unions on `type`**, so each endpoint type has its own
