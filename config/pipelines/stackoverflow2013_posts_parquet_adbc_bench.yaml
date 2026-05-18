@@ -1,7 +1,6 @@
-# Local benchmark: StackOverflow2013 from the shared benchmark SQL Server
-# container into the shared benchmark Postgres container.
+# Local benchmark: text-heavy dlt initial load with Arrow extraction and Postgres Parquet/ADBC.
 pipeline:
-  name: stackoverflow2013_mssql_to_postgres_bench
+  name: stackoverflow2013_posts_parquet_adbc_bench
 
 source:
   type: mssql
@@ -21,20 +20,12 @@ target:
   host: pg-bench
   port: 5432
   database: so2013_dlt
-  schema_alias: dlt
+  schema_alias: adbcposts
   sslmode: disable
 
 tables:
   include:
-    - Badges
-    - Comments
-    - LinkTypes
-    - PostLinks
     - Posts
-    - PostTypes
-    - Users
-    - Votes
-    - VoteTypes
 
 load:
   write_disposition: replace
