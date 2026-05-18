@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from airflow.decorators import dag, task
 
-from airflow_dlt.config import load_config
+from airflow_dlt.config import PipelineConfig, load_config
 from airflow_dlt.secrets_mock import MockDelineaClient
 
 log = logging.getLogger(__name__)
@@ -42,6 +44,75 @@ def _resolve_config_path(config_name: str) -> Path:
     return path
 
 
+_DLT_RUNTIME_ENV = {
+    "data_writer_file_max_items": "DATA_WRITER__FILE_MAX_ITEMS",
+    "normalize_file_max_items": "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS",
+    "normalize_file_max_bytes": "NORMALIZE__DATA_WRITER__FILE_MAX_BYTES",
+    "normalize_workers": "NORMALIZE__WORKERS",
+    "load_workers": "LOAD__WORKERS",
+}
+
+
+def _apply_dlt_runtime_env(runtime) -> None:
+    """Set dlt runtime env from YAML and clear stale per-task overrides."""
+    for attr, env_name in _DLT_RUNTIME_ENV.items():
+        value = getattr(runtime, attr)
+        if value is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = str(value)
+
+
+def _sanitize_pipeline_suffix(table_name: str) -> str:
+    """Return a pipeline-name-safe suffix derived from a source table name."""
+    suffix = re.sub(r"[^0-9A-Za-z]+", "_", table_name).strip("_").lower()
+    if not suffix:
+        raise ValueError(f"table name {table_name!r} does not produce a valid pipeline suffix")
+    return suffix
+
+
+def _table_specs(cfg: PipelineConfig, config_name: str) -> list[dict[str, str]]:
+    """Build JSON-serializable mapped task specs from one validated config."""
+    tables = cfg.tables.include
+    if len(tables) == 1:
+        return [{
+            "config_name": config_name,
+            "table_name": tables[0],
+            "pipeline_name": cfg.pipeline.name,
+        }]
+
+    specs: list[dict[str, str]] = []
+    suffix_to_table: dict[str, str] = {}
+    for table_name in tables:
+        suffix = _sanitize_pipeline_suffix(table_name)
+        if suffix in suffix_to_table:
+            raise ValueError(
+                "tables produce duplicate pipeline suffix "
+                f"{suffix!r}: {suffix_to_table[suffix]!r}, {table_name!r}"
+            )
+        suffix_to_table[suffix] = table_name
+        specs.append({
+            "config_name": config_name,
+            "table_name": table_name,
+            "pipeline_name": f"{cfg.pipeline.name}_{suffix}",
+        })
+    return specs
+
+
+def _secrets_client():
+    """Return the configured secrets client, or an auth-free placeholder."""
+    if SECRETS_FILE.is_file():
+        return MockDelineaClient(SECRETS_FILE)
+
+    from airflow_dlt.secrets_client import SecretsClient
+
+    class _Empty(SecretsClient):
+        def get(self, sid):
+            raise KeyError(f"no secrets file at {SECRETS_FILE}; needed for {sid}")
+
+    return _Empty()
+
+
 @dag(
     dag_id="dlt_pipeline",
     description="Run a dlt pipeline defined by a YAML config; pick the YAML via the config_name DAG run param.",
@@ -59,53 +130,62 @@ def _resolve_config_path(config_name: str) -> Path:
 )
 def dlt_pipeline_dag():
     @task
-    def run() -> dict:
-        # Lazy import: dlt pulls pyarrow at module load; keeping it out of the
-        # DAG file's top-level imports avoids a numpy/pyarrow Cython init-order
-        # bug under DagBag's parse subprocess (see the secrets_client rename
-        # commit for context).
+    def read_config() -> list[dict[str, str]]:
         from airflow.sdk import get_current_context
 
-        from airflow_dlt.dlt_pipeline import build_pipeline
-
-        # Fetch DAG run params explicitly rather than relying on Airflow's
-        # @task auto-injection of `params: dict` — both work, but the
-        # explicit form is unambiguous to humans and to static analyzers.
         params = get_current_context()["params"]
         config_name = params["config_name"]
         config_path = _resolve_config_path(config_name)
         log.info("Loading pipeline config from %s", config_path)
+        cfg = load_config(config_path)
+        specs = _table_specs(cfg, config_name)
+        log.info("Config %s will map to %d table task(s)", config_name, len(specs))
+        return specs
+
+    @task(pool="dlt_table_loads")
+    def run_table(table_spec: dict[str, str]) -> dict[str, Any]:
+        # Lazy import: dlt pulls pyarrow at module load; keeping it out of the
+        # DAG file's top-level imports avoids a numpy/pyarrow Cython init-order
+        # bug under DagBag's parse subprocess (see the secrets_client rename
+        # commit for context).
+        from airflow_dlt.dlt_pipeline import build_pipeline
+
+        config_name = table_spec["config_name"]
+        table_name = table_spec["table_name"]
+        pipeline_name = table_spec["pipeline_name"]
+        config_path = _resolve_config_path(config_name)
+        log.info("Loading pipeline config from %s", config_path)
 
         cfg = load_config(config_path)
-        secrets = MockDelineaClient(SECRETS_FILE) if SECRETS_FILE.is_file() else None
-        # SQLite endpoints don't need secrets; allow running without a file
-        # when both source and target are auth-free. build_pipeline will only
-        # call secrets.get() when a connector has a secret_id.
-        if secrets is None:
-            from airflow_dlt.secrets_client import SecretsClient
+        _apply_dlt_runtime_env(cfg.dlt)
+        secrets = _secrets_client()
 
-            class _Empty(SecretsClient):
-                def get(self, sid):
-                    raise KeyError(f"no secrets file at {SECRETS_FILE}; needed for {sid}")
-
-            secrets = _Empty()
-
-        pipeline, source = build_pipeline(cfg, secrets)
+        pipeline, source = build_pipeline(
+            cfg,
+            secrets,
+            table_names=[table_name],
+            pipeline_name=pipeline_name,
+        )
         log.info(
-            "Running dlt pipeline %s → dataset %s (%d tables)",
+            "Running dlt pipeline %s → dataset %s (%s)",
             pipeline.pipeline_name,
             pipeline.dataset_name,
-            len(cfg.tables.include),
+            table_name,
         )
-        load_info = pipeline.run(source)
+        run_kwargs = {}
+        if cfg.dlt.loader_file_format is not None:
+            run_kwargs["loader_file_format"] = cfg.dlt.loader_file_format
+        load_info = pipeline.run(source, **run_kwargs)
         log.info("Load complete: %s", load_info)
         return {
+            "base_pipeline": cfg.pipeline.name,
             "pipeline": pipeline.pipeline_name,
             "dataset": pipeline.dataset_name,
+            "table": table_name,
             "loads_ids": list(load_info.loads_ids),
         }
 
-    run()
+    run_table.expand(table_spec=read_config())
 
 
 dlt_pipeline_dag()

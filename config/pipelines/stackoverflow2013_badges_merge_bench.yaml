@@ -1,0 +1,36 @@
+# Local benchmark: merge one StackOverflow2013 table through Airflow + dlt.
+pipeline:
+  name: stackoverflow2013_badges_merge_bench
+
+source:
+  type: mssql
+  secret_id: source_mssql_stackoverflow
+  host: mssql-bench
+  port: 1433
+  database: StackOverflow2013
+  schema: dbo
+  driver: "ODBC Driver 18 for SQL Server"
+  options:
+    Encrypt: "yes"
+    TrustServerCertificate: "yes"
+
+target:
+  type: postgres
+  secret_id: target_postgres_main
+  host: pg-bench
+  port: 5432
+  database: so2013_dlt
+  schema_alias: dlt
+  sslmode: disable
+
+tables:
+  include:
+    - Badges
+  overrides:
+    Badges:
+      write_disposition: merge
+      primary_key: Id
+
+load:
+  write_disposition: replace
+  chunk_size: 100000

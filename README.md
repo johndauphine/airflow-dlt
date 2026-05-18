@@ -6,8 +6,10 @@ YAML-driven data pipelines on [Apache Airflow](https://airflow.apache.org/)
 One Airflow DAG (`dlt_pipeline`) runs every pipeline in this repo. Each YAML
 file in `config/pipelines/` defines one pipeline — source endpoint, target
 endpoint, table list, write semantics. Trigger the DAG with
-`{"config_name": "<yaml stem>"}` to pick which one to run; scheduling and
-retries are properties of the DAG itself, not of individual YAMLs.
+`{"config_name": "<yaml stem>"}` to pick which one to run. The DAG reads the
+YAML, dynamically maps one Airflow task per table, and lets the
+`dlt_table_loads` pool control how many table loads run at once. Scheduling,
+retries, and concurrency are properties of Airflow, not of individual YAMLs.
 
 Credentials are resolved through a `SecretsClient` interface; a
 `MockDelineaClient` (local YAML file) ships out of the box, and a real
@@ -36,7 +38,7 @@ backup separately) to exercise the pipeline with real data.
 
 ```
 airflow-dlt/
-├── dags/dlt_pipeline.py            # Single parameterized DAG (picks YAML via config_name)
+├── dags/dlt_pipeline.py            # Parameterized DAG; maps YAML tables to tasks
 ├── plugins/airflow_dlt/
 │   ├── config.py                   # Pydantic models + YAML loader
 │   ├── connectors.py               # Source/Target connectors + registries
@@ -96,6 +98,8 @@ load:
 
 Adding another pipeline is just another file under `config/pipelines/`. To
 run it, trigger the `dlt_pipeline` DAG with `{"config_name": "<yaml stem>"}`.
+For multi-table YAMLs, each table gets its own mapped task and dlt pipeline
+state name; single-table YAMLs keep the configured `pipeline.name` exactly.
 
 ### Scheduling a pipeline
 

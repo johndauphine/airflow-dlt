@@ -1,11 +1,16 @@
 FROM apache/airflow:3.0.0-python3.11
 
+# Keep completed dlt load packages from accumulating in the worker volume.
+ENV LOAD__DELETE_COMPLETED_JOBS=true \
+    LOAD__TRUNCATE_STAGING_DATASET=true
+
 # Microsoft ODBC Driver 18 + Kerberos support for MSSQL via pyodbc.
 USER root
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
          curl \
          gnupg2 \
+         procps \
          unixodbc-dev \
          krb5-user \
          libkrb5-dev \

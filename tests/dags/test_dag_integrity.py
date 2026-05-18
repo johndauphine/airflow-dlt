@@ -41,6 +41,13 @@ def test_dlt_pipeline_accepts_config_name_param(dagbag: DagBag) -> None:
     assert "config_name" in dag.params
 
 
+def test_dlt_pipeline_maps_table_tasks(dagbag: DagBag) -> None:
+    dag = dagbag.dags["dlt_pipeline"]
+    assert "read_config" in dag.task_ids
+    assert "run_table" in dag.task_ids
+    assert dag.get_task("run_table").pool == "dlt_table_loads"
+
+
 def test_all_dags_have_tags(dagbag: DagBag) -> None:
     """Every DAG — built-in or user-added — must declare at least one tag."""
     for dag_id, dag in dagbag.dags.items():
@@ -107,3 +114,84 @@ def test_resolver_reports_available_on_miss(tmp_path, monkeypatch):
         mod._resolve_config_path("missing")
     msg = str(exc.value)
     assert "alpha" in msg and "bravo" in msg
+
+
+def test_table_specs_suffix_multi_table_pipeline_names():
+    _, mod = _load_resolver()
+    from airflow_dlt.config import PipelineConfig
+
+    cfg = PipelineConfig.model_validate({
+        "pipeline": {"name": "base_pipe"},
+        "source": {
+            "type": "sqlite",
+            "path": "/tmp/source.db",
+        },
+        "target": {
+            "type": "sqlite",
+            "path": "/tmp/target.db",
+            "schema_alias": "dev",
+        },
+        "tables": {"include": ["Users", "Post-Links"]},
+    })
+
+    assert mod._table_specs(cfg, "cfg") == [
+        {
+            "config_name": "cfg",
+            "table_name": "Users",
+            "pipeline_name": "base_pipe_users",
+        },
+        {
+            "config_name": "cfg",
+            "table_name": "Post-Links",
+            "pipeline_name": "base_pipe_post_links",
+        },
+    ]
+
+
+def test_table_specs_preserve_single_table_pipeline_name():
+    _, mod = _load_resolver()
+    from airflow_dlt.config import PipelineConfig
+
+    cfg = PipelineConfig.model_validate({
+        "pipeline": {"name": "single_pipe"},
+        "source": {
+            "type": "sqlite",
+            "path": "/tmp/source.db",
+        },
+        "target": {
+            "type": "sqlite",
+            "path": "/tmp/target.db",
+            "schema_alias": "dev",
+        },
+        "tables": {"include": ["Users"]},
+    })
+
+    assert mod._table_specs(cfg, "cfg") == [
+        {
+            "config_name": "cfg",
+            "table_name": "Users",
+            "pipeline_name": "single_pipe",
+        }
+    ]
+
+
+def test_table_specs_reject_duplicate_sanitized_suffixes():
+    _, mod = _load_resolver()
+    from airflow_dlt.config import PipelineConfig
+
+    cfg = PipelineConfig.model_validate({
+        "pipeline": {"name": "base_pipe"},
+        "source": {
+            "type": "sqlite",
+            "path": "/tmp/source.db",
+        },
+        "target": {
+            "type": "sqlite",
+            "path": "/tmp/target.db",
+            "schema_alias": "dev",
+        },
+        "tables": {"include": ["Post-Links", "Post Links"]},
+    })
+
+    with pytest.raises(ValueError, match="duplicate pipeline suffix"):
+        mod._table_specs(cfg, "cfg")
