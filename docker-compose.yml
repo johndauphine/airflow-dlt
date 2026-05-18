@@ -195,6 +195,10 @@ services:
           --role Admin \
           --email admin@example.com \
           --password $${_AIRFLOW_WWW_USER_PASSWORD:-airflow} || true
+        /entrypoint airflow pools set \
+          dlt_table_loads \
+          "$${DLT_TABLE_LOAD_POOL_SLOTS:-4}" \
+          "Concurrent dlt table loads"
         exec /entrypoint airflow version
     environment:
       <<: *airflow-common-env

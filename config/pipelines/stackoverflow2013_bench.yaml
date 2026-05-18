@@ -45,5 +45,4 @@ dlt:
   loader_file_format: csv
   data_writer_file_max_items: 100000
   normalize_file_max_items: 100000
-  load_workers: 20
-
+  load_workers: 5

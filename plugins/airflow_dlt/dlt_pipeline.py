@@ -52,28 +52,41 @@ def _resolve(secrets: SecretsClient, secret_id: str | None) -> dict[str, str]:
     return secrets.get(secret_id) if secret_id else {}
 
 
-def build_pipeline(cfg: PipelineConfig, secrets: SecretsClient) -> tuple[Any, Any]:
+def build_pipeline(
+    cfg: PipelineConfig,
+    secrets: SecretsClient,
+    *,
+    table_names: list[str] | None = None,
+    pipeline_name: str | None = None,
+) -> tuple[Any, Any]:
     """Return a ``(pipeline, source)`` pair ready for ``pipeline.run(source)``."""
     src = make_source_connector(cfg.source)
     tgt = make_target_connector(cfg.target)
+    selected_table_names = table_names if table_names is not None else cfg.tables.include
 
     source = sql_database(
         credentials=src.sqlalchemy_url(_resolve(secrets, cfg.source.secret_id)),
         schema=src.schema_name(),
-        table_names=cfg.tables.include,
+        table_names=selected_table_names,
         chunk_size=cfg.load.chunk_size,
         backend=cfg.dlt.sql_backend,
     )
 
     for resource in source.resources.values():
         resource.apply_hints(write_disposition=cfg.load.write_disposition)
-    _apply_table_overrides(source, cfg.tables.overrides)
+    selected = set(selected_table_names)
+    selected_overrides = {
+        table_name: override
+        for table_name, override in cfg.tables.overrides.items()
+        if table_name in selected
+    }
+    _apply_table_overrides(source, selected_overrides)
 
     dataset_name = derive_dataset_name(
         cfg.target.schema_alias, src.database_name(), src.schema_name()
     )
     pipeline = dlt.pipeline(
-        pipeline_name=cfg.pipeline.name,
+        pipeline_name=pipeline_name or cfg.pipeline.name,
         destination=tgt.build_destination(_resolve(secrets, cfg.target.secret_id)),
         dataset_name=dataset_name,
     )
