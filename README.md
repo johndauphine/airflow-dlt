@@ -34,6 +34,21 @@ The example pipeline loads zero rows out of the box (the seed creates empty
 tables). Replace `mssql-init/seed.sql` (or restore the real StackOverflow
 backup separately) to exercise the pipeline with real data.
 
+## Documentation
+
+New humans and AI agents should start with the docs index:
+
+- [`docs/README.md`](docs/README.md) - reading order and high-signal files.
+- [`docs/getting-started.md`](docs/getting-started.md) - local setup, secrets,
+  Docker services, first DAG run, and health checks.
+- [`docs/philosophy.md`](docs/philosophy.md) - repo philosophy and boundaries.
+- [`docs/design.md`](docs/design.md) - architecture, DAG shape, YAML schema,
+  connectors, secrets, and runtime behavior.
+- [`docs/tech-spec.md`](docs/tech-spec.md) - behavioral contracts,
+  operational assumptions, extension points, and test requirements.
+- [`docs/benchmarks/README.md`](docs/benchmarks/README.md) - benchmark index
+  for SQL Server to Postgres and Postgres to Postgres migrations.
+
 ## Repo layout
 
 ```
@@ -50,6 +65,7 @@ airflow-dlt/
 │   ├── pipelines/stackoverflow.yaml   # Example pipeline definition
 │   ├── secrets.yaml.example           # Template (committed)
 │   └── secrets.yaml                   # Real secrets (gitignored)
+├── docs/                           # Setup, design, philosophy, benchmarks
 ├── mssql-init/seed.sql             # One-shot seed for the example
 ├── tests/                          # Unit tests for plugins + DAG integrity
 ├── docker-compose.yml              # Airflow + MSSQL + mssql-init + Postgres

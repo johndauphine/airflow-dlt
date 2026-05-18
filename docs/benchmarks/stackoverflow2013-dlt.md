@@ -2,6 +2,9 @@
 
 These notes capture local benchmark findings for loading the Brent Ozar StackOverflow2013 SQL Server database into Postgres through the Airflow `dlt_pipeline` DAG.
 
+For a benchmark overview across source/target pairs, see the
+[benchmark index](README.md).
+
 ## Environment
 
 - Source: SQL Server container `mssql-bench`, database `StackOverflow2013`, schema `dbo`.

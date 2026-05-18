@@ -1,0 +1,46 @@
+# Local benchmark: synthetic Stack Overflow-like Postgres source into Postgres.
+# Source data lives in pg-bench.so2013_dlt.so_pg_src.
+# Trigger with: {"config_name": "postgres_stackoverflow_synthetic_bench"}
+pipeline:
+  name: postgres_stackoverflow_synthetic_bench
+
+source:
+  type: postgres
+  secret_id: source_pg_bench
+  host: pg-bench
+  port: 5432
+  database: so2013_dlt
+  schema: so_pg_src
+  sslmode: disable
+
+target:
+  type: postgres
+  secret_id: target_postgres_main
+  host: postgres-target
+  port: 5432
+  database: so_pg_verify
+  schema_alias: pgsynthetic
+  sslmode: disable
+
+tables:
+  include:
+    - badges
+    - comments
+    - link_types
+    - post_links
+    - post_types
+    - posts
+    - users
+    - vote_types
+    - votes
+
+load:
+  write_disposition: replace
+  chunk_size: 100000
+
+dlt:
+  sql_backend: pyarrow
+  loader_file_format: parquet
+  data_writer_file_max_items: 100000
+  normalize_file_max_items: 100000
+  load_workers: 5

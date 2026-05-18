@@ -4,6 +4,9 @@ This repo is a DLT-first Airflow pipeline. The template it's derived from
 (`../mssql-to-postgres-pipeline`) does the same job with ~3000 lines of hand-written
 ETL; here, dlt handles the load and only the YAML/secrets/DAG glue is ours.
 
+If you are new to the repo, start with `docs/README.md`, then return here for
+agent-specific invariants and editing rules.
+
 ## Architecture
 
 - **Single parameterized DAG**, `dags/dlt_pipeline.py`. Always `dag_id=dlt_pipeline`.
