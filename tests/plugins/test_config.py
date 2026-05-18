@@ -236,22 +236,45 @@ tables:
 
 
 @pytest.mark.parametrize(
-    ("config_name", "loader_file_format", "schema_alias"),
+    ("config_name", "table_name", "loader_file_format", "schema_alias"),
     [
-        ("stackoverflow2013_votes_csv_copy_bench", "csv", "csvcopy"),
-        ("stackoverflow2013_votes_parquet_adbc_bench", "parquet", "adbc"),
+        ("stackoverflow2013_votes_csv_copy_bench", "Votes", "csv", "csvcopy"),
+        ("stackoverflow2013_votes_parquet_adbc_bench", "Votes", "parquet", "adbc"),
+        ("stackoverflow2013_posts_csv_copy_bench", "Posts", "csv", "csvposts"),
+        ("stackoverflow2013_posts_parquet_adbc_bench", "Posts", "parquet", "adbcposts"),
     ],
 )
-def test_votes_loader_format_benchmark_configs_parse(
-    config_name, loader_file_format, schema_alias
+def test_loader_format_benchmark_configs_parse(
+    config_name, table_name, loader_file_format, schema_alias
 ):
     cfg = load_config(
         Path(__file__).parents[2] / "config" / "pipelines" / f"{config_name}.yaml"
     )
 
     assert cfg.pipeline.name == config_name
-    assert cfg.tables.include == ["Votes"]
+    assert cfg.tables.include == [table_name]
     assert cfg.target.schema_alias == schema_alias
     assert cfg.dlt.sql_backend == "pyarrow"
     assert cfg.dlt.loader_file_format == loader_file_format
+    assert cfg.dlt.load_workers == 5
+
+
+def test_full_stackoverflow2013_benchmark_uses_parquet_adbc_loader():
+    cfg = load_config(
+        Path(__file__).parents[2] / "config" / "pipelines" / "stackoverflow2013_bench.yaml"
+    )
+
+    assert cfg.tables.include == [
+        "Badges",
+        "Comments",
+        "LinkTypes",
+        "PostLinks",
+        "Posts",
+        "PostTypes",
+        "Users",
+        "Votes",
+        "VoteTypes",
+    ]
+    assert cfg.dlt.sql_backend == "pyarrow"
+    assert cfg.dlt.loader_file_format == "parquet"
     assert cfg.dlt.load_workers == 5
