@@ -174,9 +174,6 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-    networks:
-      - airflow
-      - dmt-bench
 
   airflow-init:
     <<: *airflow-common
@@ -295,5 +292,3 @@ volumes:
 networks:
   airflow:
     driver: bridge
-  dmt-bench:
-    external: true

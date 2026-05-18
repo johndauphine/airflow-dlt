@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from airflow_dlt.config import PipelineConfig
 from airflow_dlt.dlt_pipeline import build_pipeline
 
@@ -65,6 +67,32 @@ def _cfg() -> PipelineConfig:
             },
         },
         "load": {"write_disposition": "replace", "chunk_size": 1000},
+    })
+
+
+def _cfg_with_unknown_override() -> PipelineConfig:
+    return PipelineConfig.model_validate({
+        "pipeline": {"name": "base_pipe"},
+        "source": {
+            "type": "mssql",
+            "secret_id": "source_secret",
+            "host": "mssql",
+            "database": "StackOverflow2013",
+            "schema": "dbo",
+        },
+        "target": {
+            "type": "postgres",
+            "secret_id": "target_secret",
+            "host": "pg",
+            "database": "warehouse",
+            "schema_alias": "dlt",
+        },
+        "tables": {
+            "include": ["Posts"],
+            "overrides": {
+                "Postz": {"primary_key": "Id"},
+            },
+        },
     })
 
 
@@ -136,3 +164,10 @@ def test_build_pipeline_ignores_overrides_for_non_selected_tables(monkeypatch):
         {"write_disposition": "replace"},
         {"primary_key": "Id"},
     ]
+
+
+def test_build_pipeline_rejects_overrides_not_in_configured_tables(monkeypatch):
+    _patch_builder(monkeypatch)
+
+    with pytest.raises(KeyError, match="Postz"):
+        build_pipeline(_cfg_with_unknown_override(), _Secrets(), table_names=["Posts"])

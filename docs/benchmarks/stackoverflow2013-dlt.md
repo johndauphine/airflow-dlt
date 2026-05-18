@@ -33,7 +33,7 @@ dlt:
   loader_file_format: csv
   data_writer_file_max_items: 100000
   normalize_file_max_items: 100000
-  load_workers: 20
+  load_workers: 5
 ```
 
 Why it helps:
@@ -41,7 +41,8 @@ Why it helps:
 - `pyarrow` avoids row-by-row Python object/dict extraction overhead.
 - `csv` lets the Postgres destination use `COPY` instead of `INSERT VALUES`.
 - File rotation keeps intermediate packages split into manageable chunks.
-- `load_workers` lets dlt upload/load files concurrently.
+- `load_workers` lets dlt upload/load files concurrently. Keep it modest
+  when Airflow is also running multiple table tasks in parallel.
 
 Do not set `normalize_workers` when running inside the Celery worker process. Airflow/Celery task workers are daemonic, and dlt multiprocessing normalize workers fail with:
 

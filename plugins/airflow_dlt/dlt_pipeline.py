@@ -74,6 +74,12 @@ def build_pipeline(
 
     for resource in source.resources.values():
         resource.apply_hints(write_disposition=cfg.load.write_disposition)
+    unknown_overrides = set(cfg.tables.overrides) - set(cfg.tables.include)
+    if unknown_overrides:
+        raise KeyError(
+            "table overrides target tables not present in tables.include: "
+            f"{sorted(unknown_overrides)}"
+        )
     selected = set(selected_table_names)
     selected_overrides = {
         table_name: override
