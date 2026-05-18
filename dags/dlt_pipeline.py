@@ -42,6 +42,25 @@ def _resolve_config_path(config_name: str) -> Path:
     return path
 
 
+_DLT_RUNTIME_ENV = {
+    "data_writer_file_max_items": "DATA_WRITER__FILE_MAX_ITEMS",
+    "normalize_file_max_items": "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS",
+    "normalize_file_max_bytes": "NORMALIZE__DATA_WRITER__FILE_MAX_BYTES",
+    "normalize_workers": "NORMALIZE__WORKERS",
+    "load_workers": "LOAD__WORKERS",
+}
+
+
+def _apply_dlt_runtime_env(runtime) -> None:
+    """Set dlt runtime env from YAML and clear stale per-task overrides."""
+    for attr, env_name in _DLT_RUNTIME_ENV.items():
+        value = getattr(runtime, attr)
+        if value is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = str(value)
+
+
 @dag(
     dag_id="dlt_pipeline",
     description="Run a dlt pipeline defined by a YAML config; pick the YAML via the config_name DAG run param.",
@@ -77,6 +96,7 @@ def dlt_pipeline_dag():
         log.info("Loading pipeline config from %s", config_path)
 
         cfg = load_config(config_path)
+        _apply_dlt_runtime_env(cfg.dlt)
         secrets = MockDelineaClient(SECRETS_FILE) if SECRETS_FILE.is_file() else None
         # SQLite endpoints don't need secrets; allow running without a file
         # when both source and target are auth-free. build_pipeline will only
@@ -97,7 +117,10 @@ def dlt_pipeline_dag():
             pipeline.dataset_name,
             len(cfg.tables.include),
         )
-        load_info = pipeline.run(source)
+        run_kwargs = {}
+        if cfg.dlt.loader_file_format is not None:
+            run_kwargs["loader_file_format"] = cfg.dlt.loader_file_format
+        load_info = pipeline.run(source, **run_kwargs)
         log.info("Load complete: %s", load_info)
         return {
             "pipeline": pipeline.pipeline_name,

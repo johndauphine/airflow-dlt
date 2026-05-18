@@ -62,6 +62,7 @@ def build_pipeline(cfg: PipelineConfig, secrets: SecretsClient) -> tuple[Any, An
         schema=src.schema_name(),
         table_names=cfg.tables.include,
         chunk_size=cfg.load.chunk_size,
+        backend=cfg.dlt.sql_backend,
     )
 
     for resource in source.resources.values():

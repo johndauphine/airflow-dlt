@@ -1,7 +1,6 @@
-# Local benchmark: StackOverflow2013 from the shared benchmark SQL Server
-# container into the shared benchmark Postgres container.
+﻿# Local benchmark: large-table dlt initial load with Arrow extraction and Postgres COPY.
 pipeline:
-  name: stackoverflow2013_mssql_to_postgres_bench
+  name: stackoverflow2013_votes_fast_bench
 
 source:
   type: mssql
@@ -21,20 +20,12 @@ target:
   host: pg-bench
   port: 5432
   database: so2013_dlt
-  schema_alias: dlt
+  schema_alias: fast
   sslmode: disable
 
 tables:
   include:
-    - Badges
-    - Comments
-    - LinkTypes
-    - PostLinks
-    - Posts
-    - PostTypes
-    - Users
     - Votes
-    - VoteTypes
 
 load:
   write_disposition: replace
@@ -46,4 +37,3 @@ dlt:
   data_writer_file_max_items: 100000
   normalize_file_max_items: 100000
   load_workers: 20
-
