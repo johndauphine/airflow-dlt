@@ -233,3 +233,25 @@ tables:
     assert cfg.target.port == 5432
     assert cfg.load.write_disposition == "replace"
     assert cfg.load.chunk_size == 100_000
+
+
+@pytest.mark.parametrize(
+    ("config_name", "loader_file_format", "schema_alias"),
+    [
+        ("stackoverflow2013_votes_csv_copy_bench", "csv", "csvcopy"),
+        ("stackoverflow2013_votes_parquet_adbc_bench", "parquet", "adbc"),
+    ],
+)
+def test_votes_loader_format_benchmark_configs_parse(
+    config_name, loader_file_format, schema_alias
+):
+    cfg = load_config(
+        Path(__file__).parents[2] / "config" / "pipelines" / f"{config_name}.yaml"
+    )
+
+    assert cfg.pipeline.name == config_name
+    assert cfg.tables.include == ["Votes"]
+    assert cfg.target.schema_alias == schema_alias
+    assert cfg.dlt.sql_backend == "pyarrow"
+    assert cfg.dlt.loader_file_format == loader_file_format
+    assert cfg.dlt.load_workers == 5
