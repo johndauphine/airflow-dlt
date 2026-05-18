@@ -20,6 +20,7 @@ x-airflow-common:
     AIRFLOW__WEBSERVER__RUN_INTERNAL_API: 'true'
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-YXNkZmFzZGZhc2RmYXNkZjEyMzQ1Njc4OTA=}
+    AIRFLOW__EXECUTION_API__JWT_EXPIRATION_TIME: ${AIRFLOW__EXECUTION_API__JWT_EXPIRATION_TIME:-86400}
 
     AIRFLOW__CORE__PARALLELISM: ${AIRFLOW__CORE__PARALLELISM:-32}
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: ${AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG:-16}
@@ -213,7 +214,7 @@ services:
       - -c
       - |
         mkdir -p /sources/logs /sources/dags /sources/plugins /opt/airflow/.dlt
-        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins} /opt/airflow/.dlt
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/logs /opt/airflow/.dlt
         /entrypoint airflow db migrate
         /entrypoint airflow users create \
           --username $${_AIRFLOW_WWW_USER_USERNAME:-airflow} \
